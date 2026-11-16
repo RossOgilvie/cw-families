@@ -23,6 +23,7 @@ import { basicPeriods, thetaPoly } from './periods.js';
 import { killingField } from './cmc.js';
 import { PairIntegrator, leftEigenvector, nuAt } from './gensym.js';
 import { leafData, willmoreFrame } from './leaf.js';
+import { WhithamCurve, ellVector } from './whitham.js';
 
 const cmul = ([a, b], [c, d]) => [a * c - b * d, a * d + b * c];
 const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
@@ -68,6 +69,15 @@ export function markedVectors(tau) {
 
 /** k = t i z for z in the internal lattice <1, tau> (complex), as a vector of R^2. */
 export const kOf = (t, [x, y]) => [-t * y, t * x];
+
+/** Positively oriented basis of the lattice dual to the lattice spanned by k1, k2 (vectors of R^2). */
+export function dualBasis(k1, k2) {
+  const det = k1[0] * k2[1] - k1[1] * k2[0];
+  const w1 = [k2[1] / det, -k2[0] / det];
+  let w2 = [-k1[1] / det, k1[0] / det];
+  if (w1[0] * w2[1] - w1[1] * w2[0] < 0) w2 = [-w2[0], -w2[1]];
+  return [w1, w2];
+}
 
 /** Positively oriented basis (w_1, w_2) of Lambda dual to (k_1, k_2) = (k(1), k(tau)): <w_i, k_j> = delta_ij. */
 export function torusBasis(t, tau) {
@@ -170,7 +180,12 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, 
         const mid = [(R.P.lam[0] + R.Q.lam[0]) / 2, (R.P.lam[1] + R.Q.lam[1]) / 2], l = Math.hypot(...mid);
         const gap = dist(R.P.lam, R.Q.lam);
         // an arrival is a sigma-node: the pair must close up (otherwise the branch jumped)
-        if (gap < 1e-2) events.push({ name: n, r: hi, t: R.t, W: Wint(hi, R.t), P: R.P, Q: R.Q, lamNode: [mid[0] / l, mid[1] / l], gap });
+        if (gap < 1e-2) {
+          // the other pairs at the same point, for continuing them beyond the event
+          const others = {};
+          for (const o of names) if (o !== n) { const Ro = pairAt(tau, o, hi, cur[o]); others[o] = { P: Ro.P, Q: Ro.Q, ok: Ro.ok }; }
+          events.push({ name: n, r: hi, t: R.t, W: Wint(hi, R.t), P: R.P, Q: R.Q, lamNode: [mid[0] / l, mid[1] / l], gap, others });
+        }
         else { end = { r: hi, why: `the ${n} pair jumped branches (gap ${gap.toFixed(3)})` }; jumped = true; }
       }
     }
@@ -187,19 +202,20 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, 
 // ---------------------------------------------------------------- candidates
 
 /**
- * A candidate from two generalized Sym points on a genus g curve with internal lattice Lambda(t, tau):
- * syms = [{ lam, nu }, { lam, nu }] (a branch point has nu = 0). Computes the monodromy at both by
+ * A candidate from two generalized Sym points on a genus g curve with internal torus lattice Lambda,
+ * given by a basis [w1, w2] (torusBasis or dualBasis): syms = [{ lam, nu }, { lam, nu }] (a branch point
+ * has nu = 0). Computes the monodromy at both by
  * shooting along the basis of Lambda, the sign characters, and the lattice on which f closes: Lambda if
  * the characters agree, otherwise the index 2 sublattice on which they do (F8).
  * Returns { lattice: [e1, e2], doubled, chars, us, W (residue formula on the closing lattice), tauExt,
  *   defects: { node (|M - (±I)| at sigma-nodes), closing (|f(z + e) - f(z)| for e = e1, e2) } }.
  */
-export function candidate(alphas, t, tau, syms, { h = 0.002 } = {}) {
+export function candidate(alphas, basis, syms, { h = 0.002 } = {}) {
   const Z = killingField(alphas);
   const lams = syms.map((s) => s.lam);
   const I = new PairIntegrator(alphas, lams);
   const us = syms.map((s) => leftEigenvector(Z, s.lam, s.nu));
-  const [w1, w2] = torusBasis(t, tau);
+  const [w1, w2] = basis;
   const shoot = (w) => { const y = I.initialState(Z); const L = Math.hypot(...w); I.march(y, w[0] / L, w[1] / L, L, h); return y; };
   const f = 8 * I.n;
   let nodeDefect = 0;
@@ -273,5 +289,155 @@ export function candidate1(tau, opts = {}) {
   event.cls = frame.classes[event.name];
   const alphas = [[-event.r, 0]];
   const syms = [{ lam: alphas[0], nu: [0, 0] }, symPoint(alphas, event.lamNode)];
-  return { tau, frame, edge, event, alphas, syms, ...candidate(alphas, event.t, tau1, syms) };
+  return { tau, frame, edge, event, alphas, syms, ...candidate(alphas, torusBasis(event.t, tau1), syms) };
+}
+
+// ---------------------------------------------------------------- genus 2 edge and candidate 2
+
+/** k_j = conj(ell_j) for the cycles around {0, alpha_j} (ell of whitham.js), signs aligned to ref (ell vectors). */
+function kVectors(alphas, ref = null) {
+  const ell = ellVector(alphas, ref);
+  return { ell, k: ell.map(([a, b]) => [a, -b]) };
+}
+const cdivc = ([a, b], [c, d]) => { const n = c * c + d * d; return [(a * c + b * d) / n, (b * c - a * d) / n]; };
+const csqrtc = ([r, i]) => { const m = Math.hypot(r, i); const sr = Math.sqrt(Math.max(0, (m + r) / 2)), si = Math.sqrt(Math.max(0, (m - r) / 2)); return [sr, i < 0 ? -si : si]; };
+
+/**
+ * The anchor of the genus 2 edge: the node of candidate 1 opened by eps, alpha_1 = -r_1, alpha_2 =
+ * (1 - eps) e^{i theta}, with (r_1, theta) solved by Newton so that the period ratio ell_2 / ell_1 is
+ * exactly that of the internal lattice, conj(s tau1 + n) (s = ±1, n from the nearest candidate at the start:
+ * the B-period through the node is the arriving vector modulo k_1).
+ * Returns { alphas, ratio, target, iters }.
+ */
+export function genus2Anchor(r, lamNode, tau1, eps = 1e-3) {
+  const th0 = Math.atan2(lamNode[1], lamNode[0]);
+  const al = ([r1, th]) => [[-r1, 0], [(1 - eps) * Math.cos(th), (1 - eps) * Math.sin(th)]];
+  const ratio = (x) => { const e = ellVector(al(x)); return cdivc(e[1], e[0]); };
+  let x = [r, th0];
+  const r0 = ratio(x);
+  let target = null, bd = Infinity;
+  for (const s of [1, -1]) for (let n = -3; n <= 3; n++) {
+    const c = [s * tau1[0] + n, -s * tau1[1]];
+    const d = Math.hypot(c[0] - r0[0], c[1] - r0[1]);
+    if (d < bd) { bd = d; target = c; }
+  }
+  let iters = 0, F = [r0[0] - target[0], r0[1] - target[1]];
+  for (; iters < 20 && Math.hypot(...F) > 1e-12; iters++) {
+    const h = 1e-7, J = [[0, 0], [0, 0]];
+    for (let j = 0; j < 2; j++) {
+      const xp = x.slice(); xp[j] += h;
+      const rp = ratio(xp);
+      J[0][j] = (rp[0] - target[0] - F[0]) / h; J[1][j] = (rp[1] - target[1] - F[1]) / h;
+    }
+    const det = J[0][0] * J[1][1] - J[0][1] * J[1][0];
+    x = [x[0] - (J[1][1] * F[0] - J[0][1] * F[1]) / det, x[1] - (J[0][0] * F[1] - J[1][0] * F[0]) / det];
+    const rr = ratio(x);
+    F = [rr[0] - target[0], rr[1] - target[1]];
+  }
+  return { alphas: al(x), ratio: [F[0] + target[0], F[1] + target[1]], target, iters, residual: Math.hypot(...F) };
+}
+
+/**
+ * The genus 2 edge from candidate 1 (the result of candidate1): open its node into the anchor, follow the
+ * Whitham curve (the period plane fixed up to scale: the internal lattice, scaled) in the direction in
+ * which alpha_2 leaves the circle, and continue the pair of the remaining class from its genus 1 position
+ * at the event (lifted by nu_2 = nu_1 sqrt(-conj lam_0) (lam - lam_0)) until it arrives at S^1.
+ * Returns { anchor, samples: [{ s, alphas, W }], events: [{ s, alphas, k, W, lamNode, P, Q, gap }], end }.
+ */
+export function genus2Edge(c1, { eps = 1e-3, ds = 0.02, sMax = 6, maxEvents = 1 } = {}) {
+  const tau1 = c1.frame.tau1, ev = c1.event;
+  const otherName = ev.name === 'tau' ? 'third' : 'tau';
+  const other = ev.others[otherName];
+  const anchor = genus2Anchor(ev.r, ev.lamNode, tau1, eps);
+  // a_{g+1} = a_g (lam - alpha)(1 - conj(alpha) lam) and (lam - lam0)(1 - conj(lam0) lam) = -conj(lam0) (lam - lam0)^2
+  const lam0 = ev.lamNode, c = csqrtc([-lam0[0], lam0[1]]);
+  const lift = (p) => ({ lam: p.lam, nu: cmul(cmul(p.nu, c), [p.lam[0] - lam0[0], p.lam[1] - lam0[1]]) });
+  let cur = { P: lift(other.P), Q: lift(other.Q), cls: null };
+  const curve = new WhithamCurve(anchor.alphas);
+  // direction: alpha_2 moves into the disc
+  // (very short steps from the anchor can fail in WhithamCurve.at, so probe at ±0.05)
+  const rad = (s) => { const p = curve.at(s); return Math.abs(p.s - s) < 1e-9 ? Math.hypot(...p.alphas[1]) : 1; };
+  const dir = rad(0.05) < rad(-0.05) ? 1 : -1;
+  // a point of the curve at s, trying slightly further along when the corrector fails on a short step
+  const pointAt = (sv) => {
+    for (const extra of [0, 0.25, 0.5, 1]) {
+      const target = sv + dir * extra * ds, p = curve.at(target);
+      if (Math.abs(p.s - target) < 1e-12) return p;
+    }
+    return null;
+  };
+  let ref = ellVector(anchor.alphas);
+  const pairAt2 = (alphas, start, refEll) => {
+    const { ell, k } = kVectors(alphas, refEll);
+    const Q = new QMap(alphas);
+    const R = Q.resonance(nearestSheet(Q, start.P), nearestSheet(Q, start.Q), [[0, 0], [0, 0]], { lattice: k });
+    return { ...R, ell, k, cls: classifyPair(R.P, R.Q) };
+  };
+  const Wat = (alphas, k) => Math.abs(willmoreFrame(leafData(alphas), ...dualBasis(k[0], k[1])));
+  const samples = [], events = [];
+  let s = 0, step = ds, end = { s: dir * sMax, why: 'sMax' };
+  // the starting point
+  {
+    const R = pairAt2(anchor.alphas, cur, ref);
+    if (!R.ok) return { anchor, samples, events, end: { s: 0, why: 'the pair could not be continued into genus 2' } };
+    cur = { P: R.P, Q: R.Q, cls: R.cls };
+    ref = R.ell;
+    samples.push({ s: 0, alphas: anchor.alphas, W: Wat(anchor.alphas, R.k), pair: R.cls });
+  }
+  while (Math.abs(s) < sMax) {
+    let R, p, next, ok = false;
+    for (let tries = 0; tries < 8 && !ok; tries++) {
+      next = s + dir * step;
+      p = pointAt(next);
+      if (!p) { end = { s: next, why: `the Whitham curve ends (${curve.fail || 'corrector'})` }; break; }
+      next = p.s;
+      R = pairAt2(p.alphas, cur, ref);
+      const jump = (a, b) => dist(a.lam, b.lam) > 0.15 * Math.max(0.05, Math.hypot(...b.lam));
+      ok = R.ok && !jump(R.P, cur.P) && !jump(R.Q, cur.Q);
+      if (!ok) step /= 2;
+    }
+    if (!ok) { if (end.why === 'sMax') end = { s: next, why: 'continuation failed' }; break; }
+    step = Math.min(ds, step * 1.5);
+    if (cur.cls && cur.cls.kind === 'off' && R.cls.kind !== 'off') {
+      let hi = s, lo = next, sHi = cur, refHi = ref;
+      for (let i = 0; i < 50 && Math.abs(hi - lo) > 1e-12; i++) {
+        const m = (hi + lo) / 2, pm = curve.at(m);
+        if (Math.abs(pm.s - m) > 1e-12) break;
+        const Rm = pairAt2(pm.alphas, sHi, refHi);
+        if (Rm.ok && Rm.cls.kind === 'off') { hi = m; sHi = { P: Rm.P, Q: Rm.Q }; refHi = Rm.ell; } else lo = m;
+      }
+      const pe = curve.at(hi), Re = pairAt2(pe.alphas, sHi, refHi);
+      const mid = [(Re.P.lam[0] + Re.Q.lam[0]) / 2, (Re.P.lam[1] + Re.Q.lam[1]) / 2], l = Math.hypot(...mid);
+      const gap = dist(Re.P.lam, Re.Q.lam);
+      if (gap < 1e-2) {
+        events.push({ s: hi, alphas: pe.alphas, k: Re.k, W: Wat(pe.alphas, Re.k), lamNode: [mid[0] / l, mid[1] / l], P: Re.P, Q: Re.Q, gap, name: otherName });
+        samples.push({ s: hi, alphas: pe.alphas, W: Wat(pe.alphas, Re.k), pair: Re.cls });
+      } else end = { s: hi, why: `the pair jumped branches (gap ${gap.toFixed(3)})` };
+      if (events.length >= maxEvents || gap >= 1e-2) { if (events.length >= maxEvents) end = { s: hi, why: 'event' }; break; }
+    }
+    s = next;
+    cur = { P: R.P, Q: R.Q, cls: R.cls };
+    ref = R.ell;
+    samples.push({ s, alphas: p.alphas, W: Wat(p.alphas, R.k), pair: R.cls });
+  }
+  return { anchor, samples, events, end };
+}
+
+/**
+ * Candidate 2 for internal tau: candidate 1, then the genus 2 edge to the arrival of the remaining pair.
+ * At the arrival there are three trivial-multiplier rho-pairs: the branch points alpha_1, alpha_2 (from the
+ * two openings) and the new node; each choice of two gives a torus (choices: [{ pair, ...candidate }]).
+ * Returns { tau, c1, edge, event, alphas, choices } (event null if none was found).
+ */
+export function candidate2(tau, opts = {}) {
+  const c1 = candidate1(tau, opts.genus1 || {});
+  if (!c1.event) return { tau, c1, edge: null, event: null };
+  const edge = genus2Edge(c1, opts.genus2 || {});
+  const event = edge.events[0] || null;
+  if (!event) return { tau, c1, edge, event: null };
+  const al = event.alphas;
+  const pts = { a1: { lam: al[0], nu: [0, 0] }, a2: { lam: al[1], nu: [0, 0] }, node: symPoint(al, event.lamNode) };
+  const basis = dualBasis(event.k[0], event.k[1]);
+  const choices = [['a1', 'a2'], ['a1', 'node'], ['a2', 'node']].map(([x, y]) => ({ pair: [x, y], syms: [pts[x], pts[y]], ...candidate(al, basis, [pts[x], pts[y]]) }));
+  return { tau, frame: c1.frame, c1, edge, event, alphas: al, choices };
 }

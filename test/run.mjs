@@ -12,7 +12,7 @@ import { RootFlow, symData } from '../src/cmc/rootflow.js';
 import { ellipticKE, nodalBoundary, f0, openEndTau } from '../src/cmc/genus2.js';
 import { PairIntegrator, leftEigenvector, nuAt, qmul, qdiv, computeGenSurface } from '../src/cmc/gensym.js';
 import { QMap, genus0Resonance, classifyPair } from '../src/cmc/resonance.js';
-import { genus0Edge, genus1Scale, candidate1, reduceTau, torusBasis, kOf } from '../src/cmc/tree.js';
+import { genus0Edge, genus1Scale, candidate1, candidate2, reduceTau, torusBasis, kOf } from '../src/cmc/tree.js';
 import { generator } from '../src/cmc/cmc.js';
 import {
   TauFlow, leafData, periodsOf, rationalPlanes, saturate, reduceFrame, classOrder, nearbyPeriods,
@@ -605,6 +605,18 @@ console.log('the tree: genus 0 edge, opening at lam = -1, genus 1 edge, candidat
   {
     const D = candidate1([0.3, 0.8]);
     check(`internal tau = 0.3 + 0.8i in F_6: order ${D.frame.order}, arriving class ${D.event && D.event.cls}`, D.frame.order === '213' && D.event && D.event.cls === 1 ? 0 : 1, 0.5);
+  }
+  // candidate 2 at 0.45 + 0.95i: the genus 2 edge from the node of candidate 1, the remaining pair arrives
+  {
+    const D = candidate2([0.45, 0.95]);
+    check('candidate 2 (0.45 + 0.95i): the genus 2 anchor has the internal period ratio', D.edge ? D.edge.anchor.residual : 1, 1e-10);
+    check(`candidate 2: the remaining pair arrives (s = ${D.event && D.event.s.toFixed(4)})`, D.event ? 0 : 1, 0.5);
+    if (D.event) {
+      check('candidate 2: W is continuous at the opening (W_int at the anchor = W_int of candidate 1)', Math.abs(D.edge.samples[0].W - D.c1.event.W) / D.c1.event.W, 1e-6);
+      check('candidate 2: all three choices of Sym points close (on doubled lattices)', Math.max(...D.choices.map((c) => c.defects.closing + c.defects.node + (c.doubled ? 0 : 1))), 1e-7);
+      check(`candidate 2: the same W for every choice, ${(D.choices[0].W / Math.PI ** 2).toFixed(4)} pi^2 > candidate 1's ${(D.c1.W / Math.PI ** 2).toFixed(4)} pi^2`,
+        Math.max(...D.choices.map((c) => Math.abs(c.W - D.choices[0].W))) + (D.choices[0].W > D.c1.W ? 0 : 1), 1e-9);
+    }
   }
   check('reduceTau maps 2.3 + 0.4i into F_1', (() => { const [x, y] = reduceTau([2.3, 0.4]); return Math.abs(x) <= 0.5 && x * x + y * y >= 1 - 1e-12 ? 0 : 1; })(), 0.5);
 }

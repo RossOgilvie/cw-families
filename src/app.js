@@ -116,7 +116,7 @@ function syncTau() {
 
 // ------------------------------------------------------------------ links
 
-let pendingCandidate = null; // internal tau from a link #k=re,im: candidate 1 is computed on start
+let pendingCandidate = null; // internal tau from a link #k=re,im (candidate 1) or #k=re,im,2 (candidate 2), computed on start
 // The state goes into the URL only through "Copy link". A page opened from such a link (or with one
 // pasted into its address bar) takes the state from the hash and then clears it from the address bar.
 
@@ -124,7 +124,7 @@ const fmt = (x, d = 4) => String(+x.toFixed(d));
 function linkURL() {
   const p = new URLSearchParams();
   // a candidate is recomputed from its internal tau
-  if (state.cell && cand.tau) return `${location.origin}${location.pathname}${location.search}#k=${cand.tau.map((x) => fmt(x, 10)).join(',')}`;
+  if (state.cell && cand.tau) return `${location.origin}${location.pathname}${location.search}#k=${cand.tau.map((x) => fmt(x, 10)).join(',')}${cand.which === 2 ? ',2' : ''}`;
   p.set('a', state.alphas.map(([re, im]) => `${fmt(re, 10)},${fmt(im, 10)}`).join(';'));
   p.set('l', fmt(state.theta0, 10));
   if (state.tau.length) p.set('t', state.tau.map((x) => fmt(x)).join(','));
@@ -155,7 +155,7 @@ function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   if (p.has('k')) {
     const k = (p.get('k') || '').split(',').map(Number);
-    if (k.length === 2 && k.every(Number.isFinite) && k[1] > 0) pendingCandidate = k;
+    if ((k.length === 2 || k.length === 3) && k.every(Number.isFinite) && k[1] > 0) pendingCandidate = k;
     return false;
   }
   if (!p.has('a')) return false;
@@ -455,7 +455,7 @@ function refreshAlphaValues() {
 // Candidate 1 for the internal tau: computed in its own worker; on success the spectral data, the two
 // generalized Sym points and one cell of the closing lattice are loaded. Editing the spectral data
 // afterwards leaves the candidate (the drawing goes back to the rectangular domain).
-const cand = { worker: null, id: 0, last: null, tau: null, busy: false, pending: null, path: null };
+const cand = { worker: null, id: 0, last: null, tau: null, busy: false, pending: null, path: null, which: 1, c2: null };
 function leaveCandidate() {
   if (!state.cell) return;
   state.cell = null;
@@ -476,6 +476,38 @@ function candidatePath(R) {
   pts.push({ s: pts.length, alphas: [[-R.event.r, 0]], W: R.event.W });
   return { points: pts, critical: [] };
 }
+const PAIR_NAMES = { a1: 'α₁', a2: 'α₂', node: 'the node' };
+function candidate2Note(R) {
+  const order = `Class order ${R.frame.order}.`;
+  const c = (x) => `${fixed(x[0], 4)} ${x[1] < 0 ? '−' : '+'} ${fixed(Math.abs(x[1]), 4)}i`;
+  const one = R.c1 ? `Candidate 1: the pair of class ${R.c1.cls} arrives at α = −${fixed(R.c1.r, 6)}; W = ${fixed(R.c1.W / PI ** 2, 4)} π².` : 'No candidate 1.';
+  if (!R.event) return `${order}\n${one}\nGenus 2: no arrival (${R.end.why}).`;
+  const lines = R.choices.map((ch) => `  ${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')}: external τ = ${c(ch.tauExt)}, closing ${ch.defects.closing.toExponential(0)}`);
+  return `${order}\n${one}\nCandidate 2: the remaining pair arrives at s = ${fixed(R.event.s, 4)}; W = ${fixed(R.choices[0].W, 4)} = ${fixed(R.choices[0].W / PI ** 2, 4)} π² (doubled lattice), for each choice of Sym points:\n${lines.join('\n')}\nComputed in ${R.ms.toFixed(0)} ms.`;
+}
+/** The paths of the branch points along the genus 2 edge, for the λ-plane. */
+function candidate2Path(R) {
+  return { points: R.samples.map((s, i) => ({ s: i, alphas: s.alphas, W: s.W })), critical: [] };
+}
+/** Draw choice i of candidate 2. */
+function showCandidate2(i) {
+  const R = cand.c2, ch = R.choices[i];
+  state.alphas = R.alphas.map((a) => a.slice());
+  state.gen = { ...state.gen, on: true, lams: ch.syms.map((s) => s.lam.slice()), signs: [1, 1] };
+  syncTau();
+  refreshAll();
+  state.cell = ch.lattice;
+  cand.path = candidate2Path(R);
+  showFamily();
+}
+$('cand2Pick').addEventListener('change', () => { if (cand.c2) { showCandidate2(+$('cand2Pick').value); needFrame = true; changed(false); } });
+$('cand2Btn').addEventListener('click', () => {
+  const re = parseNum($('tauRe').value), im = parseNum($('tauIm').value);
+  if (re === null || im === null || im <= 0) { $('candNote').textContent = 'Internal τ needs Im τ > 0.'; return; }
+  cand.which = 2;
+  candPad.set({ tau: [re, im], target: null });
+  requestCandidate([re, im]);
+});
 function candidateNote(R) {
   const order = `Class order ${R.frame.order}: the pair of class ${R.frame.classes.one} is opened.`;
   if (!R.event) return `${order}\nNo arrival found on the genus 1 edge (it ended at α = −${fixed(R.end.r, 4)}: ${R.end.why}).`;
@@ -487,6 +519,7 @@ function candidateNote(R) {
 $('cand1Btn').addEventListener('click', () => {
   const re = parseNum($('tauRe').value), im = parseNum($('tauIm').value);
   if (re === null || im === null || im <= 0) { $('candNote').textContent = 'Internal τ needs Im τ > 0.'; return; }
+  cand.which = 1;
   candPad.set({ tau: [re, im], target: null });
   requestCandidate([re, im]);
 });
@@ -501,9 +534,26 @@ function requestCandidate(tau) {
     cand.worker.onmessage = (e) => {
       const { id, result: R, error } = e.data;
       cand.busy = false;
-      $('cand1Btn').disabled = false;
+      $('cand1Btn').disabled = false; $('cand2Btn').disabled = false;
       if (cand.pending) requestCandidate(cand.pending);
       if (error) { $('candNote').textContent = error; return; }
+      if (R.which === 2) {
+        cand.last = candidate2Note(R);
+        $('candNote').textContent = cand.last;
+        candPad.set({ tau: R.tau, blocked: !R.event });
+        $('cand2Pick').hidden = !R.event;
+        if (!R.event) return;
+        cand.c2 = R;
+        const keep = +$('cand2Pick').value || 0;
+        $('cand2Pick').innerHTML = R.choices.map((ch, i) => `<option value="${i}">Sym points ${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')}</option>`).join('');
+        $('cand2Pick').value = String(Math.min(keep, R.choices.length - 1));
+        if (anim) stopAnim();
+        showCandidate2(+$('cand2Pick').value);
+        if (!cand.pending) needFrame = true;
+        changed(!!cand.pending);
+        return;
+      }
+      $('cand2Pick').hidden = true;
       cand.last = candidateNote(R);
       $('candNote').textContent = cand.last;
       candPad.set({ tau: R.tau, blocked: !R.event });
@@ -521,10 +571,10 @@ function requestCandidate(tau) {
     };
   }
   cand.busy = true;
-  $('cand1Btn').disabled = true;
+  $('cand1Btn').disabled = true; $('cand2Btn').disabled = true;
   cand.tau = t;
-  if (!state.cell) $('candNote').textContent = 'Following the genus 1 edge…';
-  cand.worker.postMessage({ id: ++cand.id, kind: 'candidate1', params: { tau: t } });
+  if (!state.cell) $('candNote').textContent = cand.which === 2 ? 'Following the genus 1 and genus 2 edges…' : 'Following the genus 1 edge…';
+  cand.worker.postMessage({ id: ++cand.id, kind: cand.which === 2 ? 'candidate2' : 'candidate1', params: { tau: t } });
 }
 
 // generalized Sym points: checkbox, readout, projection
@@ -1602,8 +1652,9 @@ setBackground(state.bg);
 changed(false);
 function runPendingCandidate() {
   $('tauRe').value = String(pendingCandidate[0]); $('tauIm').value = String(pendingCandidate[1]);
+  const two = pendingCandidate[2] === 2;
   pendingCandidate = null;
-  $('cand1Btn').click();
+  $(two ? 'cand2Btn' : 'cand1Btn').click();
 }
 if (pendingCandidate) runPendingCandidate();
 window.cmcStarted = true; // see index.html

@@ -105,6 +105,16 @@ Each milestone ends in a check that can be verified.
    A finite-difference W of the drawn torus converges towards the residue value (24.84, 24.05, 23.82, 23.67 at 48, 72, 96, 144 points per side).
    Open: the genus 1 continuation fails below r ≈ 0.05 (the α → 0 corner); after an arrival the coarse steps can jump to another branch (harmless for candidate 1, which stops at the first arrival).
 
+4. Candidate 2 and the F_6 pad (November 2026).
+   The internal τ is a point of F_6 (`internalFrame`): the classes 1 = [1], 2 = [τ], 3 = [1 + τ] keep their labels, the shortest class is opened first, and the computation runs with the reduced τ' of the rescaled lattice.
+   The Candidates section has an F_6 pad: dragging recomputes the last requested candidate (latest request wins).
+   Genus 2 edge (`genus2Edge`): the node of candidate 1 opened by ε = 1e-3 with the period ratio solved exactly (`genus2Anchor`: ell_2/ell_1 = conj(s τ' + n), the B-period through the node being the arriving vector modulo k_1), then `WhithamCurve` in the direction where α_2 leaves S^1, the remaining pair lifted by ν_2 = ν_1 sqrt(−conj λ_0)(λ − λ_0) and continued with the lattice of the current B-periods.
+   At its arrival there are three trivial-multiplier ρ-pairs (α_1, α_2, the node); every choice of two closes on a doubled lattice, with the same W and different external τ.
+   The paths of the branch points along the genus 1 or genus 2 edge are drawn in the λ-plane, coloured by W.
+   Results: at 0.45 + 0.95i candidate 1 has W = 2.3131 π^2 and candidate 2 W = 2.4725 π^2, with external τ −0.0871 + 1.5768i (α_1 + α_2), 0.1855 + 1.7195i (α_1 + node), −0.1 + 1.9i (α_2 + node).
+   At 0.2 + 1.3i there is no candidate 2 on the genus 2 edge: every tracked pair (vectors m + nτ, |m| ≤ 2, n ≤ 2) moves away from S^1 until the edge reaches the α → 0 corner.
+   Open: the arrivals in genus 2 lie close to the α → 0 corner (|α| ~ 0.05–0.3), where WhithamCurve stops (newton); at 0.4 + i Node finds the arrival at s = 0.935 and the browser does not (the curve ends first), so the corner needs better numerics (the rescaled coordinate λ/t of the genus 2 paper). The genus 2 anchor Newton diverges for some τ (0.4 + 0.97i, near i), and for τ' on the imaginary axis (0 + 1.15i, 1.6i) the remaining pair is not continued into genus 2. The third pair at candidate 1 can already be on S^1 (0.5 + 0.9i), where an arrival from off S^1 is not the right event.
+
 ## TODO
 
 1. Rewrite the README for cw-families: it still describes cmc-immersion (title, controls, layout, the removed panels).

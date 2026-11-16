@@ -7,7 +7,7 @@
 
 import { computeSurface, closingInfo } from './cmc/cmc.js';
 import { computeGenSurface } from './cmc/gensym.js';
-import { candidate1 } from './cmc/tree.js';
+import { candidate1, candidate2 } from './cmc/tree.js';
 import { WhithamCurve } from './cmc/whitham.js';
 
 self.onmessage = (e) => {
@@ -33,6 +33,28 @@ self.onmessage = (e) => {
           event: { name: event.name, cls: event.cls, r: event.r, t: event.t, W: event.W, lamNode: event.lamNode },
           alphas: C.alphas, syms: C.syms, lattice: C.lattice, doubled: C.doubled, chars: C.chars,
           W: C.W, tauExt: C.tauExt, defects: C.defects,
+        });
+      }
+      out.ms = performance.now() - t0;
+      self.postMessage({ id, result: out });
+    } catch (err) {
+      self.postMessage({ id, error: String(err && err.message ? err.message : err) });
+    }
+    return;
+  }
+  if (kind === 'candidate2') {
+    try {
+      const t0 = performance.now();
+      const C = candidate2(params.tau);
+      const c1 = C.c1;
+      const out = { tau: C.tau, frame: c1.frame, which: 2, event: null, ms: 0,
+        c1: c1.event ? { r: c1.event.r, cls: c1.event.cls, W: c1.W, tauExt: c1.tauExt } : null,
+        samples: C.edge ? C.edge.samples.map(({ s, alphas, W }) => ({ s, alphas, W })) : [], end: C.edge ? C.edge.end : { why: 'no candidate 1' } };
+      if (C.event) {
+        Object.assign(out, {
+          event: { s: C.event.s, W: C.event.W, lamNode: C.event.lamNode, gap: C.event.gap },
+          alphas: C.alphas,
+          choices: C.choices.map((ch) => ({ pair: ch.pair, syms: ch.syms, lattice: ch.lattice, doubled: ch.doubled, chars: ch.chars, W: ch.W, tauExt: ch.tauExt, defects: ch.defects })),
         });
       }
       out.ms = performance.now() - t0;
