@@ -1,10 +1,15 @@
 // The tree of one internal tau (tree.js, treeOf) as a graph of W against the path through the edges:
-// genus 0 on [0, 1] (from near the vacuum to the opening of the pair for 1), genus 1 on [1, 2] (to the
-// first arrival, candidate 1), genus 2 on [2, 3] (to the arrival of candidates 2 and 3, or the open end).
+// the opening of the pair for 1 on the left axis, the genus 1 edge on the first third of the width (to the
+// first arrival, candidate 1), the genus 2 edge on the other two thirds (to the arrival of candidates 2
+// and 3, or the open end). The genus 0 edge is not shown. Path coordinates x (treeOf): genus 1 on [1, 2],
+// genus 2 on [2, 3].
 // W is in units of pi^2, on the closing (doubled) lattice. A dot marks the sample whose immersion is shown;
 // it can be dragged along the path (snapping to the nodes) or stepped with the arrow keys.
 
-const EDGE_NAMES = ['genus 0', 'genus 1', 'genus 2'];
+/** Fraction of the width at path coordinate x: genus 1 [1, 2] -> [0, 1/3], genus 2 [2, 3] -> [1/3, 1]. */
+const frac = (x) => (x <= 2 ? Math.max(0, (x - 1) / 3) : 1 / 3 + ((x - 2) * 2) / 3);
+/** Shown: the genus 1 and 2 edges, and the opening (the last sample of genus 0). */
+const shown = (s) => s.edge > 0 || s.x >= 1;
 
 export class TreeView {
   /** onPick(index, dragging) when the user moves the dot */
@@ -38,14 +43,14 @@ export class TreeView {
       hi = top + 0.12 * span;
       lo = this.full ? 0 : Math.max(0, bot - 0.25 * span);
     }
-    return { w, h, pad, lo, hi, X: (x) => pad.l + (x / 3) * (w - pad.l - pad.r), Y: (W) => h - pad.b - ((W / Math.PI ** 2 - lo) / (hi - lo)) * (h - pad.t - pad.b) };
+    return { w, h, pad, lo, hi, X: (x) => pad.l + frac(x) * (w - pad.l - pad.r), Y: (W) => h - pad.b - ((W / Math.PI ** 2 - lo) / (hi - lo)) * (h - pad.t - pad.b) };
   }
 
   /** The sample nearest to pixel column px (snapping to a node within 8 px). */
   _pick(px) {
     const S = this.tree.samples, { X } = this._geom();
     let best = 0, bd = Infinity;
-    S.forEach((s, i) => { const d = Math.abs(X(s.x) - px); if (d < bd) { bd = d; best = i; } });
+    S.forEach((s, i) => { if (!shown(s)) return; const d = Math.abs(X(s.x) - px); if (d < bd) { bd = d; best = i; } });
     for (const n of this.tree.nodes) if (Math.abs(X(S[n.index].x) - px) < 8) return n.index;
     return best;
   }
@@ -82,8 +87,9 @@ export class TreeView {
     c.addEventListener('keydown', (e) => {
       if (!this.tree || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
       e.preventDefault();
-      const n = this.tree.samples.length, d = e.key === 'ArrowRight' ? 1 : -1;
-      emit(Math.max(0, Math.min(n - 1, this.index + d * (e.shiftKey ? 10 : 1))), false);
+      const S = this.tree.samples, n = S.length, d = e.key === 'ArrowRight' ? 1 : -1;
+      const first = Math.max(0, S.findIndex(shown));
+      emit(Math.max(first, Math.min(n - 1, this.index + d * (e.shiftKey ? 10 : 1))), false);
     });
   }
 
@@ -106,10 +112,9 @@ export class TreeView {
     ctx.strokeStyle = C.rule; ctx.lineWidth = 1;
     ctx.strokeRect(pad.l + 0.5, pad.t + 0.5, w - pad.l - pad.r - 1, h - pad.t - pad.b - 1);
     ctx.font = `italic 11px ${FONT}`; ctx.fillStyle = C.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    for (let g = 0; g < 3; g++) {
-      if (g) { ctx.beginPath(); ctx.moveTo(X(g) + 0.5, pad.t); ctx.lineTo(X(g) + 0.5, h - pad.b); ctx.stroke(); }
-      ctx.fillText(EDGE_NAMES[g], X(g + 0.5), h - pad.b + 5);
-    }
+    ctx.beginPath(); ctx.moveTo(X(2) + 0.5, pad.t); ctx.lineTo(X(2) + 0.5, h - pad.b); ctx.stroke();
+    ctx.fillText('genus 1', X(1.5), h - pad.b + 5);
+    ctx.fillText('genus 2', X(2.5), h - pad.b + 5);
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     // ticks at a step of 1, 0.5, 0.2 or 0.1 (pi^2), about four of them
     const step = [1, 0.5, 0.2, 0.1, 0.05].find((d) => (hi - lo) / d >= 3) || 0.05;
@@ -123,13 +128,14 @@ export class TreeView {
     ctx.fillText('8π', pad.l + 3, y8 + 1);
     if (!this.tree) return;
     ctx.save();
-    ctx.beginPath(); ctx.rect(pad.l, pad.t - 12, w - pad.l - pad.r, h - pad.t - pad.b + 12); ctx.clip();
+    ctx.beginPath(); ctx.rect(pad.l - 7, pad.t - 12, w - pad.l - pad.r + 7, h - pad.t - pad.b + 12); ctx.clip();
 
     // the edges
     const S = this.tree.samples;
     ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5;
-    for (let g = 0; g < 3; g++) {
-      const e = S.filter((s) => s.edge === g);
+    for (let g = 1; g < 3; g++) {
+      // genus 1 starts at the opening
+      const e = S.filter((s) => s.edge === g || (g === 1 && s.edge === 0 && shown(s)));
       if (!e.length) continue;
       ctx.beginPath();
       e.forEach((s, i) => (i ? ctx.lineTo(X(s.x), Y(s.W)) : ctx.moveTo(X(s.x), Y(s.W))));
@@ -142,8 +148,8 @@ export class TreeView {
       ctx.fillStyle = '#fff'; ctx.strokeStyle = C.ink; ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
       ctx.fillStyle = C.muted;
-      ctx.textAlign = x > w - 50 ? 'right' : 'center';
-      ctx.fillText(n.label, x > w - 50 ? x - 4 : x, y - 5);
+      ctx.textAlign = x > w - 50 ? 'right' : x < pad.l + 25 ? 'left' : 'center';
+      ctx.fillText(n.label, x > w - 50 ? x - 4 : x < pad.l + 25 ? x + 3 : x, y - 5);
     }
     // the dot
     if (this.index >= 0 && this.index < S.length) {
