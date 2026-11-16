@@ -180,6 +180,8 @@
   .bprow .gly { justify-self: end; }
   sub { font-size: 0.68em; line-height: 0; }
 
+  #treeView { width: 100%; height: 170px; display: block; margin: 6px 0 2px; touch-action: none; }
+  #treeNote { white-space: pre-line; }
   #tauPad, #candPad { width: 100%; max-width: 290px; aspect-ratio: 1; display: block; margin: 2px auto 0; touch-action: none; }
   #tauPad { margin-top: 10px; }
   #tauPadNote, #dpNote { white-space: pre-line; }
@@ -230,8 +232,10 @@
       </div>
       <canvas id="candPad" aria-label="The internal τ in F₆; drag to move it and recompute candidate 1" title="Drag to move the internal τ (candidate 1 is recomputed as you go). The six copies of F₁ are labelled by the order of the classes 1 = [1], 2 = [τ], 3 = [1 + τ] by length; the shortest is opened first. The wheel zooms, shift-drag pans, double-click shows all of F₆."></canvas>
       <div class="btnrow"><button class="tbtn" id="cand2Btn" type="button" title="Candidate 1, then open its node into genus 2 and follow the τ-preserving flow until the remaining pair arrives: candidates 2 and 3 (and the third choice of Sym points) on that spectral curve">Find candidates 2, 3</button>
-        <select id="cand2Pick" hidden aria-label="The two generalized Sym points of candidate 2"></select></div>
+        <select id="cand2Pick" hidden aria-label="The two generalized Sym points"></select></div>
       <div class="btnrow"><button class="tbtn" id="cand1Btn" type="button" title="Open the pair for 1 at the starting scale and follow the genus 1 edge to the first arrival of a marked pair at the unit circle">Find candidate 1</button></div>
+      <canvas id="treeView" tabindex="0" aria-label="The tree: W against the path through the genus 0, 1 and 2 edges; drag the dot to draw the immersion there" title="The tree of the internal τ: W (on the closing lattice, in units of π²) along the genus 0, 1 and 2 edges, from near the vacuum to the candidates. Drag the dot (it snaps to the nodes) or use the arrow keys to draw the immersion at that point; double-click shows W from 0. Before the Sym points are ripe it is a plane, invariant under homotheties."></canvas>
+      <p class="note" id="treeNote"></p>
       <p class="note" id="candNote"></p>
     </div>
   </section>

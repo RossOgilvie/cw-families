@@ -194,7 +194,8 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, 
     for (const n of names) cur[n] = { P: res[n].P, Q: res[n].Q, cls: res[n].cls };
     r = next;
     const t = res.tau.t;
-    samples.push({ r, t, W: Wint(r, t), pairs: Object.fromEntries(names.map((n) => [n, res[n].cls])) });
+    samples.push({ r, t, W: Wint(r, t), pairs: Object.fromEntries(names.map((n) => [n, res[n].cls])),
+      pts: Object.fromEntries(names.map((n) => [n, { P: res[n].P, Q: res[n].Q }])) });
     if (events.length >= maxEvents) { end = { r, why: 'event' }; break; }
   }
   return { samples, events, end };
@@ -412,7 +413,7 @@ export function genus2Edge(c1, { eps = 1e-3, tMin = 1e-3, dSigma = 0.1, maxEvent
     if (!R.ok) return { anchor, samples, events, end: { t: tA, why: 'the pair could not be continued into genus 2' }, openEnd: null };
     cur = { P: R.P, Q: R.Q, cls: R.cls };
     ref = R.ell;
-    samples.push({ t: tA, s: 0, alphas: anchor.alphas, W: Wat(anchor.alphas, R.k), pair: R.cls });
+    samples.push({ t: tA, s: 0, alphas: anchor.alphas, W: Wat(anchor.alphas, R.k), pair: R.cls, k: R.k, pts: { P: R.P, Q: R.Q } });
   }
   let sigma = Math.log(tA), step = dSigma, betaPrev = null, sigmaPrev = null;
   const sigmaMin = Math.log(tMin);
@@ -447,7 +448,7 @@ export function genus2Edge(c1, { eps = 1e-3, tMin = 1e-3, dSigma = 0.1, maxEvent
       if (gap < 1e-2) {
         const W = Wat(alE, Re.k);
         events.push({ t: tE, s: Math.log(tA / tE), alphas: alE, k: Re.k, W, lamNode: [mid[0] / l, mid[1] / l], P: Re.P, Q: Re.Q, gap, name: otherName });
-        samples.push({ t: tE, s: Math.log(tA / tE), alphas: alE, W, pair: Re.cls });
+        samples.push({ t: tE, s: Math.log(tA / tE), alphas: alE, W, pair: Re.cls, k: Re.k, pts: { P: Re.P, Q: Re.Q } });
         if (events.length >= maxEvents) { end = { t: tE, why: 'event' }; break; }
       } else { end = { t: tE, why: `the pair jumped branches (gap ${gap.toFixed(3)})` }; break; }
     }
@@ -455,7 +456,7 @@ export function genus2Edge(c1, { eps = 1e-3, tMin = 1e-3, dSigma = 0.1, maxEvent
     beta = sol.beta; sigma = next; ref = R.ell;
     cur = { P: R.P, Q: R.Q, cls: R.cls };
     const al = alphasOf(Math.exp(sigma), beta);
-    samples.push({ t: Math.exp(sigma), s: Math.log(tA / Math.exp(sigma)), alphas: al, W: Wat(al, R.k), pair: R.cls });
+    samples.push({ t: Math.exp(sigma), s: Math.log(tA / Math.exp(sigma)), alphas: al, W: Wat(al, R.k), pair: R.cls, k: R.k, pts: { P: R.P, Q: R.Q } });
   }
   let openEnd = null;
   if (!events.length && end.why === 'tMin') {
@@ -529,4 +530,101 @@ export function candidate2(tau, opts = {}) {
   const basis = dualBasis(event.k[0], event.k[1]);
   const choices = [['a1', 'a2'], ['a1', 'node'], ['a2', 'node']].map(([x, y]) => ({ pair: [x, y], syms: [pts[x], pts[y]], ...candidate(al, basis, [pts[x], pts[y]]) }));
   return { tau, frame: c1.frame, c1, edge, event, alphas: al, choices };
+}
+
+// ---------------------------------------------------------------- the tree as one path of drawable samples
+
+/**
+ * The sublattice { a w1 + b w2 : a s1 + b s2 even } of the lattice with basis [w1, w2], for a parity
+ * s in (Z/2)^2: the lattice itself for s = 0, else of index 2 (positively oriented when the basis is).
+ * Two Sym points of classes g1, g2 (as (p, q) mod 2 in the basis dual to [w1, w2]) close on the
+ * sublattice of parity g1 + g2 (F8); this holds for their sign characters before they are ripe too.
+ */
+export function paritySublattice([w1, w2], [s1, s2]) {
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1]], dbl = (a) => [2 * a[0], 2 * a[1]];
+  if (!(s1 & 1) && !(s2 & 1)) return [w1, w2];
+  if (!(s2 & 1)) return [dbl(w1), w2];
+  if (!(s1 & 1)) return [w1, dbl(w2)];
+  return [dbl(w1), add(w1, w2)];
+}
+
+// classes of the marked vectors of tau1, as (p, q) mod 2 in the basis (1, tau1)
+const CLASS_PQ = { one: [1, 0], tau: [0, 1], third: [1, 1] };
+
+/** The Sym point at the point p = { lam, nu } of the curve of alphas: { lam, sign } with nu = sign sqrt(lam a(lam)). */
+function symOf(alphas, p) {
+  const n = nuAt(alphas, p.lam, 1);
+  return { lam: p.lam.slice(), sign: n[0] * p.nu[0] + n[1] * p.nu[1] >= 0 ? 1 : -1 };
+}
+
+/**
+ * The tree for one internal tau as a path of samples, from near the vacuum to the last candidate, with the
+ * immersion drawable at every sample (before the Sym points are ripe it is a plane, equivariant under
+ * the lattice: f(z + w) = mu_1(w) f(z) mu_2(w)^{-1}, and the multipliers are real, so these are homotheties
+ * of R^4 about 0; the cell drawn is the one on which the eventual candidate closes). A pair off S^1 is
+ * (P, rho sigma P); the Sym point is P (Q gives the other eigenline over lam_P, and both agree once ripe).
+ * C is the result of candidate2 (or of candidate1).
+ * The edges (genus 0, 1, 2) occupy x in [0, 1], [1, 2], [2, 3]: genus 0 by log t from t = 10 / pi to the
+ * opening at t = 1 / pi, genus 1 by log r to the first arrival, genus 2 by log t to the arrival or tMin.
+ * W is the residue formula on the closing (doubled) lattice: twice W on the internal lattice.
+ * Each sample: { edge, x, W, t, alphas, views: [{ key, syms: [{ lam, sign }, ...], lattice, ripe }],
+ *   node (a label at the candidates and the opening) }.
+ * Views on the genus 2 edge, in the order of candidate2's choices: [a1, a2] (candidate 2: ripe along the
+ * whole edge), [a1, b] (towards candidate 3), [a2, b], with b the remaining pair; elsewhere one view.
+ * Returns { frame, samples, nodes: [{ x, W, label, index }], end }.
+ */
+export function treeOf(C, { n0 = 24 } = {}) {
+  const c1 = C.c1 || C, frame = c1.frame, tau1 = frame.tau1;
+  const edge1 = c1.edge, ev1 = c1.event;
+  const a = ev1 ? ev1.name : 'tau', b = a === 'tau' ? 'third' : 'tau';
+  const samples = [], nodes = [];
+  const sOne = CLASS_PQ.one, sA = CLASS_PQ[a];
+  const par = [(sOne[0] + sA[0]) & 1, (sOne[1] + sA[1]) & 1];
+  // genus 0: the pair for 1 and the pair a, at scale t (the curve nu^2 = -lam is fixed, the lattice scales)
+  const tTop = 10 / Math.PI, tBot = 1 / Math.PI;
+  const mk = markedVectors(tau1);
+  for (let i = 0; i <= n0; i++) {
+    const t = tTop * (tBot / tTop) ** (i / n0);
+    const p1 = genus0Resonance(kOf(t, mk.one))[0].P, pa = genus0Resonance(kOf(t, mk[a]))[0].P;
+    const basis = torusBasis(t, tau1);
+    samples.push({ edge: 0, x: i / n0, t, W: 2 / (t * t * tau1[1]), alphas: [],
+      views: [{ key: `one,${a}`, syms: [symOf([], p1), symOf([], pa)], lattice: paritySublattice(basis, par), ripe: false }],
+      node: i === n0 ? 'opening of the pair for 1' : null });
+  }
+  nodes.push({ index: samples.length - 1, label: 'opening' });
+  // genus 1: the branch point alpha = -r and the pair a, to the first arrival
+  const s1 = edge1.samples.filter((sm) => !ev1 || sm.r >= ev1.r);
+  const rEnd = ev1 ? ev1.r : s1.length ? s1[s1.length - 1].r : 1;
+  for (const sm of s1) {
+    const al = [[-sm.r, 0]], pa = sm.pts[a].P;
+    samples.push({ edge: 1, x: 1 + Math.log(sm.r) / Math.log(rEnd), t: sm.t, W: 2 * sm.W, alphas: al,
+      views: [{ key: `alpha,${a}`, syms: [{ lam: al[0], sign: 1 }, symOf(al, pa)], lattice: paritySublattice(torusBasis(sm.t, tau1), par), ripe: false }] });
+  }
+  if (ev1 && c1.lattice) {
+    samples.push({ edge: 1, x: 2, t: ev1.t, W: c1.W, alphas: c1.alphas,
+      views: [{ key: 'candidate 1', syms: c1.syms.map((p) => symOf(c1.alphas, p)), lattice: c1.lattice, ripe: true }], node: 'candidate 1' });
+    nodes.push({ index: samples.length - 1, label: 'candidate 1' });
+  }
+  // genus 2: three views; the parities from the characters of the branch points (constant along the edge)
+  const edge2 = C.edge && C.c1 ? C.edge : null;
+  if (edge2 && C.choices && C.choices.length) {
+    const ch0 = C.choices[0], chars = ch0.chars; // chars[w][j], j = 0 (a1), 1 (a2)
+    const flip = (x) => (x < 0 ? 1 : 0);
+    const parOf = { 'a1,a2': chars.map(([u, v]) => (u === v ? 0 : 1)), 'a1,b': chars.map(([, v]) => flip(v)), 'a2,b': chars.map(([u]) => flip(u)) };
+    const ev2 = C.event, list = edge2.samples.filter((sm) => sm.k && (!ev2 || sm.t >= ev2.t));
+    const tA = list[0].t, tEnd = ev2 ? ev2.t : list[list.length - 1].t;
+    for (const sm of list) {
+      if (ev2 && sm.t === ev2.t) continue;
+      const al = sm.alphas, basis = dualBasis(sm.k[0], sm.k[1]);
+      const pts = { a1: { lam: al[0], sign: 1 }, a2: { lam: al[1], sign: 1 }, b: symOf(al, sm.pts.P) };
+      samples.push({ edge: 2, x: 2 + Math.log(tA / sm.t) / Math.log(tA / tEnd), t: sm.t, W: 2 * sm.W, alphas: al,
+        views: ['a1,a2', 'a1,b', 'a2,b'].map((key) => ({ key, syms: key.split(',').map((k) => pts[k]), lattice: paritySublattice(basis, parOf[key]), ripe: key === 'a1,a2' })) });
+    }
+    if (ev2) {
+      samples.push({ edge: 2, x: 3, t: ev2.t, W: C.choices[0].W, alphas: C.alphas,
+        views: C.choices.map((ch) => ({ key: ch.pair.join(), syms: ch.syms.map((p) => symOf(C.alphas, p)), lattice: ch.lattice, ripe: true })), node: 'candidates 2 and 3' });
+      nodes.push({ index: samples.length - 1, label: 'candidates 2, 3' });
+    } else if (C.openEnd) nodes.push({ index: samples.length - 1, label: 'open end' });
+  }
+  return { frame, samples, nodes, end: edge2 ? edge2.end : edge1.end };
 }

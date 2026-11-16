@@ -132,6 +132,14 @@ Each milestone ends in a check that can be verified.
    The branch points (minima of the conformal factor, which tend to 0 like t) are exactly the four half-periods of the doubled lattice, and f(−z) − f(z) → 0 like t^{1/2} (0.2 + 1.3i). So the limit is the quotient T^2 → T^2/±1 ≅ S^2 of the external torus (℘ of the external lattice up to a Möbius transformation); W = 8π.
    The external τ is constant along the edge (−0.3133 + 1.1159i at 0.2 + 1.3i).
    The Möbius-balanced projection is now the automatic one for surfaces on no 3-sphere. It also changes the look of ordinary candidates: candidate 2 at 0.45 + 0.95i appears as a torus without the two-coloured halves. The candidates are still on no 3-sphere in the balanced frame (largest distance from the best hyperplane 0.22–0.52 on the unit S^4, against 4e-8 for the Clifford torus), so F11 stands.
+8. Unripe data and the tree view (November 2026; next directions 1 and 2).
+   `treeOf` (tree.js) turns a candidate computation into one path of samples, from near the vacuum (t = 10/π, W = 0.02π²) through the opening, candidate 1, and the genus 2 edge to candidates 2 and 3 or the open end, with the immersion drawable at every sample.
+   Sym points along the path: genus 0, the pair for 1 and the arriving pair a; genus 1, the branch point α and a; genus 2, three views (α_1 + α_2, which is candidate 2 and ripe along the whole edge; α_1 + the remaining pair b, towards candidate 3; α_2 + b).
+   The cell drawn is the one on which the eventual candidate closes: by F8 it depends only on the classes of the two Sym points (`paritySublattice`), and this reproduces the lattices that candidates 1, 2, 3 and the other choice find from their characters.
+   Before ripeness the immersion is a plane with f(z + w) = μ_1(w) f(z) μ_2(w)^{-1} (u_j is an eigenvector of the monodromy). The multipliers turn out to be real, so the lattice acts by homotheties of R^4 about 0, f(z + w) = c(w) f(z) with c real, and ripeness is c = 1 (checked to 1e-8 on all three edges, F13).
+   W increases monotonically along the whole path (all test values of τ).
+   The tree view (`src/tree-view.js`, milestone 7, first version) plots W on the closing lattice against the path: genus 0, 1, 2 on [0, 1], [1, 2], [2, 3]. The nodes are the opening, candidate 1, and candidates 2 and 3 or the open end. A dot is dragged along the path (snapping to the nodes) or stepped with the arrow keys, and the 3D view, the λ-plane and a note (with c_1, c_2) follow it. The y-axis shows the band of the genus 1 and 2 edges, and double-click shows it from 0. The view picker chooses among the Sym-point pairs on the genus 2 edge.
+   Not yet in the tree: the genus 1 edge continued past candidate 1 without opening (to the arrival of the third pair), and arrivals of pairs that start on S^1.
 
 ## TODO
 
@@ -140,6 +148,16 @@ Each milestone ends in a check that can be verified.
 3. The page title and subtitle ("CMC surfaces") and `about.html` still describe cmc-immersion.
 4. Editing the domain sliders while a candidate is shown has no effect (the candidate's cell is drawn); editing the spectral data leaves the candidate.
 5. Headless checks: `chromium --virtual-time-budget` does not finish loading module workers that import other modules, so screenshots of worker results need a real-time wait (a small DevTools-protocol script).
+
+Next directions (Ross, 16 November 2026):
+
+1. Unripe data: the immersion formula before the resonance pair reaches S^1. Expected: an immersed plane, equivariant under the lattice (see below), as for Sym–Bobenko without closing conditions.
+2. The immersion all along the tree, from the vacuum to the candidate.
+3. Better visualizations of 4D.
+4. Only the generalized Sym formula is wanted: clean up the λ-plane interface accordingly.
+5. Precompute curves in F_6 showing where candidates exist and where the edges end at open ends.
+6. A new layout: the screen in four quarters, one with the controls and three with the candidates.
+7. Store the whole tree, for smoother and faster updates under changes of τ (reuse the existing tree, e.g. at open ends), and to see whether candidates jump as τ changes.
 
 ## 4. Decisions taken
 

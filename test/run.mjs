@@ -12,7 +12,7 @@ import { RootFlow, symData } from '../src/cmc/rootflow.js';
 import { ellipticKE, nodalBoundary, f0, openEndTau } from '../src/cmc/genus2.js';
 import { PairIntegrator, leftEigenvector, nuAt, qmul, qdiv, computeGenSurface } from '../src/cmc/gensym.js';
 import { QMap, genus0Resonance, classifyPair } from '../src/cmc/resonance.js';
-import { genus0Edge, genus1Scale, candidate1, candidate2, genus2Edge, reduceTau, torusBasis, kOf } from '../src/cmc/tree.js';
+import { genus0Edge, genus1Scale, candidate1, candidate2, genus2Edge, reduceTau, torusBasis, kOf, treeOf, paritySublattice, dualBasis } from '../src/cmc/tree.js';
 import { generator } from '../src/cmc/cmc.js';
 import {
   TauFlow, leafData, periodsOf, rationalPlanes, saturate, reduceFrame, classOrder, nearbyPeriods,
@@ -643,6 +643,38 @@ console.log('the tree: genus 0 edge, opening at lam = -1, genus 1 edge, candidat
     let rad = 0;
     for (let v = 0; v < n * n; v++) rad = Math.max(rad, Math.abs(Math.hypot(S.pos[3 * v], S.pos[3 * v + 1], S.pos[3 * v + 2]) - 1));
     check(`open end: balanced projection at t = ${last.t.toExponential(0)} within ${rad.toFixed(3)} of the unit sphere`, rad, 0.15);
+  }
+  // the tree as a path (treeOf): W increases from near the vacuum to the candidates; the parity rule for the
+  // closing lattice gives the candidates' own lattices; before the Sym points are ripe the immersion is a
+  // plane with f(z + e) = c f(z), c real (a homothety of R^4 about 0), the same c at different z
+  {
+    const D = candidate2([0.45, 0.95]), T = treeOf(D);
+    const S = T.samples;
+    check(`tree at 0.45 + 0.95i: ${S.length} samples, W increasing (${(S[0].W / Math.PI ** 2).toFixed(3)} to ${(S[S.length - 1].W / Math.PI ** 2).toFixed(3)} pi^2)`,
+      S.slice(1).reduce((a, sm, i) => a + Math.max(0, S[i].W - sm.W), 0), 1e-9);
+    const sameLattice = (A, B) => {
+      const det = A[0][0] * A[1][1] - A[0][1] * A[1][0];
+      const m = B.map((v) => [(v[0] * A[1][1] - v[1] * A[1][0]) / det, (A[0][0] * v[1] - A[0][1] * v[0]) / det]);
+      const d = m[0][0] * m[1][1] - m[0][1] * m[1][0];
+      return m.flat().every((x) => Math.abs(x - Math.round(x)) < 1e-6) && Math.abs(Math.abs(d) - 1) < 1e-6;
+    };
+    const c1 = D.c1, cls = { tau: [0, 1], third: [1, 1] }[c1.event.name];
+    const basis2 = dualBasis(D.event.k[0], D.event.k[1]), ch = D.choices[0].chars, fl = (x) => (x < 0 ? 1 : 0);
+    const par2 = { 'a1,a2': ch.map(([u, v]) => (u === v ? 0 : 1)), 'a1,node': ch.map(([, v]) => fl(v)), 'a2,node': ch.map(([u]) => fl(u)) };
+    check('parity rule = the lattices of candidates 1, 2, 3 and the other choice',
+      [sameLattice(c1.lattice, paritySublattice(torusBasis(c1.event.t, c1.frame.tau1), [(1 + cls[0]) & 1, cls[1] & 1]))]
+        .concat(D.choices.map((c) => sameLattice(c.lattice, paritySublattice(basis2, par2[c.pair.join()])))).filter((x) => !x).length, 0.5);
+    for (const e of [0, 1, 2]) {
+      const list = S.filter((sm) => sm.edge === e && !sm.node), sm = list[Math.floor(list.length / 2)];
+      const v = sm.views[e === 2 ? 1 : 0], [l1, l2] = v.lattice.map((w) => Math.hypot(...w));
+      const G = computeGenSurface({ alphas: sm.alphas, lams: v.syms.map((p) => p.lam), signs: v.syms.map((p) => p.sign), cell: v.lattice, projection: 'drop4',
+        sCoords: [0, 0.3 * l1, l1, 1.3 * l1], tCoords: [0, 0.4 * l2], hmax: 0.002 });
+      const f = (i, j) => Array.from(G.pos4.slice(4 * (j * 4 + i), 4 * (j * 4 + i) + 4));
+      const ratio = (a, b) => { const n = b.reduce((x, y) => x + y * y, 0), c = a.reduce((x, y, k) => x + y * b[k], 0) / n; return { c, r: Math.hypot(...a.map((x, k) => x - c * b[k])) / Math.hypot(...a) }; };
+      const A = ratio(f(2, 0), f(0, 0)), B = ratio(f(3, 1), f(1, 1));
+      check(`unripe (genus ${e}, ${v.key}): f(z + e1) = c f(z) with c = ${A.c.toFixed(4)} real, the same at z = 0.3 e1 + 0.4 e2 (${B.c.toFixed(4)})`,
+        Math.max(A.r, B.r, Math.abs(A.c - B.c) / Math.abs(A.c)) + (Math.abs(A.c - 1) > 1e-3 ? 0 : 1), 1e-4);
+    }
   }
   check('reduceTau maps 2.3 + 0.4i into F_1', (() => { const [x, y] = reduceTau([2.3, 0.4]); return Math.abs(x) <= 0.5 && x * x + y * y >= 1 - 1e-12 ? 0 : 1; })(), 0.5);
 }

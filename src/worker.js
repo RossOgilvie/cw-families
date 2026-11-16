@@ -7,7 +7,7 @@
 
 import { computeSurface, closingInfo } from './cmc/cmc.js';
 import { computeGenSurface } from './cmc/gensym.js';
-import { candidate1, candidate2 } from './cmc/tree.js';
+import { candidate1, candidate2, treeOf } from './cmc/tree.js';
 import { WhithamCurve } from './cmc/whitham.js';
 
 self.onmessage = (e) => {
@@ -27,7 +27,7 @@ self.onmessage = (e) => {
       const t0 = performance.now();
       const C = candidate1(params.tau);
       const { edge, event } = C;
-      const out = { tau: C.tau, frame: C.frame, samples: edge.samples.map(({ r, t, W }) => ({ r, t, W })), end: edge.end, event: null, ms: 0 };
+      const out = { tau: C.tau, frame: C.frame, samples: edge.samples.map(({ r, t, W }) => ({ r, t, W })), end: edge.end, event: null, ms: 0, tree: treeOf(C) };
       if (event) {
         Object.assign(out, {
           event: { name: event.name, cls: event.cls, r: event.r, t: event.t, W: event.W, lamNode: event.lamNode },
@@ -51,6 +51,7 @@ self.onmessage = (e) => {
         c1: c1.event ? { r: c1.event.r, cls: c1.event.cls, W: c1.W, tauExt: c1.tauExt } : null,
         samples: C.edge ? C.edge.samples.map(({ s, alphas, W }) => ({ s, alphas, W })) : [], end: C.edge ? C.edge.end : { why: 'no candidate 1' } };
       if (C.openEnd) out.openEnd = C.openEnd;
+      if (c1.event) out.tree = treeOf(C);
       if (C.event || C.openEnd) {
         Object.assign(out, {
           event: C.event ? { s: C.event.s, t: C.event.t, W: C.event.W, lamNode: C.event.lamNode, gap: C.event.gap } : null,

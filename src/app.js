@@ -12,6 +12,7 @@ import {
 import { TauPad } from './tau-pad.js';
 import { s2BoundaryCurves } from './cmc/genus2.js';
 import { PeriodPad } from './period-pad.js';
+import { TreeView } from './tree-view.js';
 
 const $ = (id) => document.getElementById(id);
 const polar = (r, t) => [r * Math.cos(t), r * Math.sin(t)];
@@ -354,6 +355,11 @@ function show(res) {
   const g = genus();
   const argQ = hopfArg(state.alphas, state.theta0);
   const size = Math.max(res.bbox[3] - res.bbox[0], res.bbox[4] - res.bbox[1], res.bbox[5] - res.bbox[2]) / (2 * state.H);
+  if (state.gen.on && state.cell && cand.tree && res.nx > 1 && res.ny > 1) {
+    const cf = cellFactors(res), ripe = cf.every((x) => Math.abs(x.c - 1) < 1e-3);
+    $('treeNote').textContent = `${cand.sampleNote}: f(z + e₁) = c₁ f(z), f(z + e₂) = c₂ f(z) on the cell with c = ${cf.map((x) => fixed(x.c, 4)).join(', ')}` +
+      `${ripe ? '' : ' (homotheties of ℝ⁴ about 0)'}${Math.max(...cf.map((x) => x.res)) > 1e-3 ? ` (not proportional: ${Math.max(...cf.map((x) => x.res)).toExponential(1)})` : ''}.`;
+  }
   if (state.gen.on) {
     showStatus(`Genus ${g} · two Sym points, f in ℝ⁴ (${{ sphere: 'on a 3-sphere: stereographic', balanced: 'not on a 3-sphere: Möbius-balanced', pca: 'principal axes', stereo4: 'stereographic from e₄', drop4: 'drop x₄' }[res.projection]}) · κ₀ = ${fmt(kappa0(state.alphas), 3)}` +
       ` · ${res.nx}×${res.ny} in ${res.stats.ms.toFixed(0)} ms · extent ${size.toPrecision(3)}`, false);
@@ -455,11 +461,12 @@ function refreshAlphaValues() {
 // Candidate 1 for the internal tau: computed in its own worker; on success the spectral data, the two
 // generalized Sym points and one cell of the closing lattice are loaded. Editing the spectral data
 // afterwards leaves the candidate (the drawing goes back to the rectangular domain).
-const cand = { worker: null, id: 0, last: null, tau: null, busy: false, pending: null, path: null, which: 1, c2: null };
+const cand = { worker: null, id: 0, last: null, tau: null, busy: false, pending: null, path: null, which: 1, tree: null, index: -1, sampleNote: '' };
 function leaveCandidate() {
   if (!state.cell) return;
   state.cell = null;
   cand.path = null;
+  treeView.set({ index: -1 });
   showFamily();
   $('candNote').textContent = cand.last ? `${cand.last} (left: the data were edited)` : '';
 }
@@ -470,12 +477,6 @@ const candPad = new TauPad($('candPad'), (t, dragging) => {
 });
 candPad.set({ tau: [0.2, 1.3], mode: 'F6' });
 candPad.showAll();
-/** The path of the branch point along the genus 1 edge, for the λ-plane (as the Whitham family). */
-function candidatePath(R) {
-  const pts = R.samples.filter((s) => s.r >= R.event.r).map((s, i) => ({ s: i, alphas: [[-s.r, 0]], W: s.W }));
-  pts.push({ s: pts.length, alphas: [[-R.event.r, 0]], W: R.event.W });
-  return { points: pts, critical: [] };
-}
 const PAIR_NAMES = { a1: 'α₁', a2: 'α₂', node: 'the node' };
 // candidates 2 and 3 share the genus 2 spectral curve: 2 takes the two pairs of branch points as Sym
 // points, 3 the branch points from genus 1 and the arriving node (cw_candidates.md)
@@ -497,22 +498,45 @@ function candidate2Note(R) {
   const lines = R.choices.map((ch) => `  ${CHOICE_NAMES[ch.pair.join()]} (${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')}): external τ = ${c(ch.tauExt)}, closing ${ch.defects.closing.toExponential(0)}`);
   return `${order}\n${one}\nGenus 2: the remaining pair arrives at t = ${fixed(R.event.t, 5)} (the scale of the branch points); W = ${fixed(R.choices[0].W, 4)} = ${fixed(R.choices[0].W / PI ** 2, 4)} π² (doubled lattice) for every choice of Sym points:\n${lines.join('\n')}\nComputed in ${R.ms.toFixed(0)} ms.`;
 }
-/** The paths of the branch points along the genus 2 edge, for the λ-plane. */
-function candidate2Path(R) {
-  return { points: R.samples.map((s, i) => ({ s: i, alphas: s.alphas, W: s.W })), critical: [] };
-}
-/** Draw choice i of candidate 2. */
-function showCandidate2(i) {
-  const R = cand.c2, ch = R.choices[i];
-  state.alphas = (ch.alphas || R.alphas).map((a) => a.slice());
-  state.gen = { ...state.gen, on: true, lams: ch.syms.map((s) => s.lam.slice()), signs: [1, 1] };
+// the tree of the current candidate (treeOf in tree.js): the dot of the tree view picks the sample whose
+// immersion is drawn; at unripe samples the immersion is a plane with f(z + e) = c f(z), c real (cellFactors)
+const VIEW_NAMES = {
+  'a1,a2': 'Candidate 2 (α₁ + α₂)', 'a1,b': 'Towards candidate 3 (α₁ + the pair)', 'a2,b': 'α₂ + the pair',
+  'a1,node': 'Candidate 3 (α₁ + the node)', 'a2,node': 'Other choice (α₂ + the node)',
+};
+const viewName = (key) => VIEW_NAMES[key] || (key === 'candidate 1' ? 'Candidate 1 (α + the node)' : key.startsWith('one,') ? 'the pair for 1 + the arriving pair' : 'α + the arriving pair');
+const treeView = new TreeView($('treeView'), (i, dragging) => { showSample(i); needFrame = !dragging && needFrame; changed(dragging); });
+/** Draw sample i of the tree, with the view chosen in cand2Pick (kept across samples). */
+function showSample(i) {
+  const T = cand.tree, sm = T.samples[i];
+  cand.index = i;
+  const pick = $('cand2Pick'), keep = +pick.value || 0;
+  pick.innerHTML = sm.views.map((v, j) => `<option value="${j}">${viewName(v.key)}</option>`).join('');
+  pick.value = String(Math.min(keep, sm.views.length - 1));
+  pick.hidden = sm.views.length < 2;
+  const v = sm.views[+pick.value];
+  if (anim) stopAnim();
+  state.alphas = sm.alphas.map((a) => a.slice());
+  state.gen = { ...state.gen, on: true, lams: v.syms.map((p) => p.lam.slice()), signs: v.syms.map((p) => p.sign) };
   syncTau();
   refreshAll();
-  state.cell = ch.lattice;
-  cand.path = candidate2Path(R);
+  state.cell = v.lattice;
+  const edge = T.samples.filter((s) => s.edge === sm.edge && s.alphas.length);
+  cand.path = edge.length > 1 ? { points: edge.map((s, j) => ({ s: j, alphas: s.alphas, W: s.W })), critical: [] } : null;
   showFamily();
+  cand.sampleNote = `Genus ${sm.edge}${sm.node ? `, ${sm.node}` : ''}: ${sm.edge === 1 ? `α = −${fixed(-sm.alphas[0][0], 5)}, t = ${fixed(sm.t, 5)}` : `t = ${sm.t < 0.01 ? sm.t.toExponential(2) : fixed(sm.t, 4)}`}, W = ${fixed(sm.W / PI ** 2, 4)} π² (closing lattice).\n${viewName(v.key)}: ${v.ripe ? 'ripe, a torus' : 'not ripe, a plane'}`;
+  $('treeNote').textContent = cand.sampleNote;
 }
-$('cand2Pick').addEventListener('change', () => { if (cand.c2) { showCandidate2(+$('cand2Pick').value); needFrame = true; changed(false); } });
+/** f(z + e_k) = c_k f(z) on the cell (c_k real at unripe Sym points; 1 when the torus closes). */
+function cellFactors(res) {
+  const P = res.pos4, nx = res.nx, ny = res.ny, f = (v) => [0, 1, 2, 3].map((e) => P[4 * v + e]);
+  const f0 = f(0), n0 = f0.reduce((a, x) => a + x * x, 0);
+  return [nx - 1, (ny - 1) * nx].map((v) => {
+    const g = f(v), c = g.reduce((a, x, e) => a + x * f0[e], 0) / n0;
+    return { c, res: Math.hypot(...g.map((x, e) => x - c * f0[e])) / Math.hypot(...g) };
+  });
+}
+$('cand2Pick').addEventListener('change', () => { if (cand.tree) { showSample(cand.index); needFrame = true; changed(false); } });
 $('cand2Btn').addEventListener('click', () => {
   const re = parseNum($('tauRe').value), im = parseNum($('tauIm').value);
   if (re === null || im === null || im <= 0) { $('candNote').textContent = 'Internal τ needs Im τ > 0.'; return; }
@@ -549,38 +573,23 @@ function requestCandidate(tau) {
       $('cand1Btn').disabled = false; $('cand2Btn').disabled = false;
       if (cand.pending) requestCandidate(cand.pending);
       if (error) { $('candNote').textContent = error; return; }
-      if (R.which === 2) {
-        cand.last = candidate2Note(R);
-        $('candNote').textContent = cand.last;
-        candPad.set({ tau: R.tau, blocked: !R.event && !R.openEnd });
-        $('cand2Pick').hidden = !R.event && !R.openEnd;
-        if (!R.event && !R.openEnd) return;
-        // near the open end the choices are candidate 2 at several scales t (default: the one nearest 0.01)
-        const sameKind = cand.c2 && !cand.c2.event === !R.event;
-        cand.c2 = R;
-        const near01 = R.choices.reduce((b, ch, i) => (ch.t && Math.abs(Math.log(ch.t / 0.01)) < Math.abs(Math.log(R.choices[b].t / 0.01)) ? i : b), 0);
-        const keep = sameKind ? +$('cand2Pick').value || 0 : R.event ? 0 : near01;
-        $('cand2Pick').innerHTML = R.choices.map((ch, i) => `<option value="${i}">${CHOICE_NAMES[ch.pair.join()]} ${R.event ? `(${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')})` : `at t = ${ch.t.toExponential(0)}`}</option>`).join('');
-        $('cand2Pick').value = String(Math.min(keep, R.choices.length - 1));
-        if (anim) stopAnim();
-        showCandidate2(+$('cand2Pick').value);
-        if (!cand.pending) needFrame = true;
-        changed(!!cand.pending);
-        return;
-      }
-      $('cand2Pick').hidden = true;
-      cand.last = candidateNote(R);
+      cand.last = R.which === 2 ? candidate2Note(R) : candidateNote(R);
       $('candNote').textContent = cand.last;
-      candPad.set({ tau: R.tau, blocked: !R.event });
-      if (!R.event) return;
-      if (anim) stopAnim();
-      state.alphas = R.alphas.map((a) => a.slice());
-      state.gen = { ...state.gen, on: true, lams: R.syms.map((s) => s.lam.slice()), signs: [1, 1] };
-      syncTau();
-      refreshAll();
-      state.cell = R.lattice;
-      cand.path = candidatePath(R);
-      showFamily();
+      candPad.set({ tau: R.tau, blocked: !R.event && !R.openEnd });
+      const prev = cand.tree, prevSm = prev && prev.samples[cand.index];
+      cand.tree = R.tree || null;
+      treeView.set({ tree: cand.tree, index: -1 });
+      if (!cand.tree) { $('cand2Pick').hidden = true; $('treeNote').textContent = ''; return; }
+      // the dot: kept at the same place of the path when the tree is of the same kind (e.g. while tau is
+      // dragged), otherwise at the last candidate, or near the open end at t = 0.01 (closer is slow to draw)
+      const S = cand.tree.samples, nearX = (x) => S.reduce((b, s, i) => (Math.abs(s.x - x) < Math.abs(S[b].x - x) ? i : b), 0);
+      const kind = (T) => T.nodes.map((n) => n.label).join();
+      let idx;
+      if (prevSm && kind(prev) === kind(cand.tree)) idx = nearX(prevSm.x);
+      else if (R.openEnd) idx = S.reduce((b, s, i) => (s.edge === 2 && Math.abs(Math.log(s.t / 0.01)) < Math.abs(Math.log(S[b].t / 0.01)) ? i : b), S.length - 1);
+      else idx = cand.tree.nodes.length ? cand.tree.nodes[cand.tree.nodes.length - 1].index : S.length - 1;
+      treeView.set({ index: idx });
+      showSample(idx);
       if (!cand.pending) needFrame = true;
       changed(!!cand.pending);
     };
