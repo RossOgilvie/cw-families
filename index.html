@@ -182,10 +182,7 @@
 
   #treeView { width: 100%; height: 170px; display: block; margin: 6px 0 2px; touch-action: none; }
   #treeNote { white-space: pre-line; }
-  #tauPad, #candPad { width: 100%; max-width: 290px; aspect-ratio: 1; display: block; margin: 2px auto 0; touch-action: none; }
-  #tauPad { margin-top: 10px; }
-  #tauPadNote, #dpNote { white-space: pre-line; }
-  #periodPad { width: 100%; max-width: 290px; aspect-ratio: 1; display: block; margin: 2px auto 0; touch-action: none; }
+  #candPad { width: 100%; max-width: 290px; aspect-ratio: 1; display: block; margin: 2px auto 0; touch-action: none; }
   #dpHover { min-height: 1.35em; }
   #dpHover:empty { display: block; }
   #sizeRows { --labw: 50px; }
@@ -276,50 +273,6 @@
           <select id="proj"><option value="auto">automatic</option><option value="balanced">Möbius-balanced</option><option value="pca">principal axes</option><option value="stereo4">stereographic from e₄</option><option value="drop4">drop x₄</option></select>
         </div>
       </div>
-    </div>
-  </section>
-
-  <section class="sec">
-    <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="dpBox"><span class="chev" data-glyph="chev"></span>Plane of differentials</button></h2>
-    <div class="secbody" id="dpBox">
-      <canvas id="periodPad" aria-label="The plane of differentials, with integer period vectors near it; click one to lock it in" title="Click a point to move the curve so that the plane passes through it (locked in, rust ring); a second point makes the data doubly periodic; click a locked point to release it. The wheel zooms, shift-drag pans, double-click fits."></canvas>
-      <p class="note" id="dpHover"></p>
-      <button class="disc bphead" type="button" aria-expanded="true" aria-controls="dpInfo"><span class="chev" data-glyph="chev"></span><i>Lattice and domain</i></button>
-      <div id="dpInfo">
-        <p class="note" id="dpNote"></p>
-        <div id="sizeRows"></div>
-        <label class="cb"><input type="checkbox" class="chk" id="curv" checked><span>Align grid with curvature lines</span></label>
-        <div id="phiRow"></div>
-        <div class="btnrow">
-          <button class="tbtn" id="rescaleBtn" type="button" title="Resize the domain (keeping its centre and angle) to the smallest rectangle enclosing the parallelogram of w₁, w₂: a whole period cell. Needs a lattice.">Rescale domain to lattice</button>
-        </div>
-        <span class="note" id="rescaleInfo"></span>
-      </div>
-    </div>
-  </section>
-
-  <section class="sec">
-    <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="whithamBox"><span class="chev" data-glyph="chev"></span>Whitham deformation</button></h2>
-    <div class="secbody" id="whithamBox">
-      <div id="whithamRow"></div>
-      <div class="btnrow"><button class="tbtn" id="toRoot" type="button" title="Move along the family to the critical point of 𝒲, where the differentials have a common root on the unit circle, and put λ₀ there">Flow to common root</button></div>
-      <div class="endrow"><span class="lab">Left endpoint</span><span id="endL"></span></div>
-      <div class="endrow"><span class="lab">Right endpoint</span><span id="endR"></span></div>
-      <canvas id="tauPad" aria-label="τ, with ψ = Σ logit|α| fixed; drag to move along the leaf" title="Drag to move τ with ψ = Σ logit|α| fixed. The wheel zooms, shift-drag pans, double-click shows all of F₆."></canvas>
-      <p class="note" id="tauPadNote"></p>
-      <label class="cb"><input type="checkbox" class="chk" id="showFamily" checked><span>Show the family in the λ-plane</span></label>
-      <label class="cb"><input type="checkbox" class="chk" id="whithamDomain" checked><span>Carry the domain along</span></label>
-      <p class="note" id="whithamNote"></p>
-    </div>
-  </section>
-
-  <section class="sec">
-    <h2 class="sech"><button class="disc" type="button" aria-expanded="false" aria-controls="tauBox"><span class="chev" data-glyph="chev"></span>Isospectral deformation</button></h2>
-    <div class="secbody" id="tauBox" hidden>
-      <div id="centreRows"></div>
-      <div id="tauList"></div>
-      <label class="cb"><input type="checkbox" class="chk" id="showDivisor"><span>Show the eigenline divisor in the λ-plane</span></label>
-      <p class="note" id="tauNote"></p>
     </div>
   </section>
 

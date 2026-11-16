@@ -3,15 +3,8 @@
 import { Viewer } from './viewer.js';
 import { SpectralWidget, MAX_GENUS } from './spectral-widget.js';
 import { shapeFlows, kappa0, hopfArg } from './cmc/cmc.js';
-import { WhithamCurve } from './cmc/whitham.js';
 import { commonRootsOnCircle } from './cmc/periods.js';
-import {
-  leafData, willmoreFrame, tauOf, rationalPlanes, latticeFrame, reduceFrame, classOrder, TauFlow, PlaneFlow,
-  nearbyPeriods, lllPeriods, predictMoves, saturate, periodsOf, frameVector,
-} from './cmc/leaf.js';
 import { TauPad } from './tau-pad.js';
-import { s2BoundaryCurves } from './cmc/genus2.js';
-import { PeriodPad } from './period-pad.js';
 import { TreeView } from './tree-view.js';
 
 const $ = (id) => document.getElementById(id);
@@ -316,11 +309,7 @@ function onResult(e) {
 
 /** Called after every state change. dragging: more changes are coming, so only preview. */
 function changed(dragging = false) {
-  leafCheck();
-  whithamSlider.refresh();
-  requestFamily();
   updateCommonRoots();
-  dpUpdate();
   request(false);
   clearTimeout(fullTimer);
   fullTimer = setTimeout(() => request(true), dragging || anim ? 350 : 0);
@@ -397,11 +386,9 @@ const widget = new SpectralWidget($('lam'), (s, dragging) => {
 });
 
 function genusChanged() {
-  whithamRecentre();
   syncTau();
   needFrame = true;
   buildAlphaList();
-  buildTau();
   widget.set({ alphas: state.alphas, theta0: state.theta0, divisor: [] });
 }
 
@@ -469,6 +456,7 @@ function leaveCandidate() {
   cand.path = null;
   treeView.set({ index: -1 });
   viewer.setMarkers([]);
+  $('treeNote').textContent = '';
   showFamily();
   $('candNote').textContent = cand.last ? `${cand.last} (left: the data were edited)` : '';
 }
@@ -795,56 +783,6 @@ function slider(parent, { label, min: lo, max: hi, step, get, set, digits = 3, u
   return { refresh, row, setRange };
 }
 
-let tauSliders = [];
-function buildTau() {
-  const box = $('tauList');
-  box.innerHTML = '';
-  if (anim && anim.key === 'tau') stopAnim();
-  tauSliders = state.tau.map((_, i) => slider(box, {
-    label: `<i>τ</i><sub>${i + 1}</sub>`, min: -2 * PI, max: 2 * PI, step: 0.001,
-    get: () => state.tau[i], set: (v) => { state.tau[i] = v; },
-    play: { key: 'tau', i },
-    reset: { title: `Set τ${i + 1} back to 0`, onClick: () => { state.tau[i] = 0; tauSliders[i].refresh(); changed(false); } },
-  }));
-  const g = genus();
-  $('tauNote').textContent = g >= 3
-    ? 'x₀, y₀ are the two translations (the isospectral flows of order 0) and move the centre of the domain; τ₁, … are the shape times.'
-    : 'For genus ≤ 2 every isospectral deformation is a translation: x₀ and y₀ move the centre of the domain.';
-}
-
-// each domain slider resets to the domain of the last preset or link (homeDomain)
-const homeReset = (what, apply) => ({
-  title: `${what} back to the last preset or link`,
-  onClick: () => {
-    apply(homeDomain);
-    for (const sl of [...domainSliders, phiSlider]) sl.refresh();
-    if (whitham.curve) whitham.applied = null; // becomes the new base at the next Whitham move
-    needFrame = true;
-    changed(false);
-  },
-});
-const domainSliders = [
-  slider($('centreRows'), {
-    label: '<i>x</i><sub>0</sub>', title: 'Centre of the domain', min: -20, max: 20, step: 0.001, get: () => state.z0[0], set: (v) => { state.z0[0] = v; },
-    spacer: true, reset: homeReset('x₀', (h) => { state.z0[0] = h.z0[0]; }),
-  }),
-  slider($('centreRows'), {
-    label: '<i>y</i><sub>0</sub>', title: 'Centre of the domain', min: -20, max: 20, step: 0.001, get: () => state.z0[1], set: (v) => { state.z0[1] = v; },
-    spacer: true, reset: homeReset('y₀', (h) => { state.z0[1] = h.z0[1]; }),
-  }),
-  slider($('sizeRows'), {
-    label: 'Width', min: 0.5, max: 40, step: 0.001, get: () => state.width, set: (v) => { state.width = Math.max(0.05, v); },
-    reset: homeReset('Width', (h) => { state.width = h.width; }),
-  }),
-  slider($('sizeRows'), {
-    label: 'Height', min: 0.5, max: 40, step: 0.001, get: () => state.height, set: (v) => { state.height = Math.max(0.05, v); },
-    reset: homeReset('Height', (h) => { state.height = h.height; }),
-  }),
-];
-const phiSlider = slider($('phiRow'), {
-  label: 'Angle', title: 'Angle of the grid in the z-plane', min: -PI, max: PI, step: 0.001, unit: PI, suffix: 'π', get: () => state.phi, set: (v) => { state.phi = v; },
-  reset: homeReset('Angle', (h) => { state.phi = h.phi; }),
-});
 const appearanceSliders = [
   slider($('appearanceRows'), {
     label: 'Line spacing', min: 0.02, max: 2, step: 0.001, get: () => state.gridStep,
@@ -864,14 +802,6 @@ const transpSlider = slider($('appearanceRows'), {
   recompute: false,
 });
 appearanceSliders.push(transpSlider);
-
-$('showDivisor').addEventListener('change', () => widget.set({ showDivisor: $('showDivisor').checked }));
-
-$('curv').addEventListener('change', () => {
-  state.curv = $('curv').checked;
-  $('phiRow').classList.toggle('hide', state.curv);
-  changed(false);
-});
 
 // ------------------------------------------------------------------ mean curvature (a homothety in R^3)
 
@@ -901,654 +831,12 @@ function updateCommonRoots() {
 }
 let commonRoots = [];
 
-// ------------------------------------------------------------------ Whitham deformation
+// ------------------------------------------------------------------ paths in the λ-plane
 
-// curve: the Whitham curve through the anchor (created lazily); key: the alphas it last produced;
-// base: the domain at s = 0; w0: the leaf's frame at the anchor (the frame at s is w0 / z).
-const whitham = { curve: null, s: 0, key: null, base: null, z: [1, 0], applied: null, w0: null };
-const domainKey = () => JSON.stringify([state.z0, state.width, state.height]);
-const akey = () => JSON.stringify(state.alphas);
-const cdivC = ([ar, ai], [br, bi]) => { const d = br * br + bi * bi; return [(ar * br + ai * bi) / d, (ai * br - ar * bi) / d]; };
-const cmulC = ([ar, ai], [br, bi]) => [ar * br - ai * bi, ar * bi + ai * br];
-/** Im(conj(w1) w2): the oriented area of the frame; W changes by its ratio under a change of frame. */
-const frameArea = ([w1, w2]) => w1[0] * w2[1] - w1[1] * w2[0];
-
-// ------------------------------------------------------------------ the leaf: frame and lattice
-
-// The leaf of the Whitham foliation through the current data (leaf.js), on which the period plane is
-// fixed. leaf.w is a frame of the plane at the current data (displacements w_1, w_2, with b_k = p_{w_k});
-// the 𝒲 slider and the τ pad are relative to it. Moves along the leaf (the slider, the pad) carry the
-// frame along. Any other edit of the spectral data starts a new leaf, with the frame (1, i), or a basis
-// of the lattice Λ adapted to its invariants when the period plane is rational (always for genus 2).
-// planes: the rational planes near the period plane at the current data (to recognise a rational one).
-// locks: the periods locked in from the Plane of differentials, as coordinates in the frame; gen: counts
-// new leaves (to refit the picture).
-// With a lattice, leaf.w is the basis of Λ adapted to its invariants (the τ pad's τ is that basis's); the
-// differentials b_1, b_2 that 𝒲 is evaluated on (and the arrows in the plane) are then A·leaf.w for a
-// constant real matrix A (null: A = I), chosen from the locked periods (dpLattice). Moving along the leaf
-// keeps every period fixed, so A stays constant. frameKind: 'anchor' ((1, i) where the leaf was entered),
-// 'lock' (one locked period w: the frame (w, i w)), 'lattice' (the adapted basis), 'locks' (the two locked
-// periods, when they are a basis of Λ) or 'lock-basis' (a locked period and the lattice vector completing it).
-const leaf = { key: null, w: [[1, 0], [0, 1]], lattice: null, planes: null, locks: [], gen: 0, A: null, frameKind: 'anchor' };
-/** The frame of the differentials b_1, b_2 (for 𝒲): A·leaf.w. */
-function displayFrame() {
-  const A = leaf.A, [u1, u2] = leaf.w;
-  return A ? A.map(([a, b]) => [a * u1[0] + b * u2[0], a * u1[1] + b * u2[1]]) : leaf.w;
-}
-const detA = () => (leaf.A ? leaf.A[0][0] * leaf.A[1][1] - leaf.A[0][1] * leaf.A[1][0] : 1);
-
-function computePlanes() {
-  leaf.planes = null;
-  if (genus() < 2) return;
-  try {
-    const d = leafData(state.alphas);
-    leaf.planes = { key: akey(), ref: d.ell, list: rationalPlanes(d.ell) };
-  } catch { leaf.planes = null; }
-}
-
-function leafCheck() {
-  if (leaf.key === akey()) return;
-  leaf.key = akey();
-  leaf.w = [[1, 0], [0, 1]];
-  leaf.lattice = null;
-  leaf.locks = [];
-  leaf.A = null;
-  leaf.frameKind = 'anchor';
-  leaf.gen++;
-  computePlanes();
-  const here = leaf.planes && leaf.planes.list.find((p) => p.dist < 1e-8);
-  if (here) {
-    try {
-      leaf.lattice = latticeFrame(leaf.planes.ref, ...here.m);
-      leaf.w = leaf.lattice.w;
-      leaf.frameKind = 'lattice';
-      if (genus() > 2) leaf.locks = [[1, 0], [0, 1]]; // the lattice basis, locked in
-    } catch { leaf.lattice = null; }
-  }
-  whithamRecentre();
-  tauReset();
-}
-
-/** After a move along the leaf: the data and the frame carried there. */
-function leafMoved(w) {
-  leaf.key = akey();
-  leaf.w = w.map((v) => v.slice());
-}
-
-function whithamRecentre() {
-  family.key = null; // the family's s = 0 moves here: retrace
-  whitham.curve = null;
-  whitham.s = 0;
-  whitham.key = null;
-  whitham.z = [1, 0];
-  whithamSlider.refresh();
-  whithamNote();
-}
-function whithamNote() {
-  const g = genus();
-  $('whithamBox').querySelectorAll('input, button').forEach((el) => { el.disabled = g < 2; });
-  $('whithamNote').textContent = g < 2 ? 'Needs genus ≥ 2.' : '';
-  toRootState();
-}
-
-// W at the current spectral data, for the differentials b_1, b_2 (displayFrame)
-function currentW() {
-  if (genus() < 2) return null;
-  const key = JSON.stringify([state.alphas, leaf.w, leaf.A]);
-  if (currentW.key !== key) {
-    currentW.key = key;
-    try { currentW.val = willmoreFrame(leafData(state.alphas), ...displayFrame()); } catch { currentW.val = null; }
-  }
-  return currentW.val;
-}
-// the factor from W in the curve's own frame ((1, i) / z, as in whitham.js) to the differentials b_1, b_2
-// (A·w0 / z; W is alternating, so it scales by the determinants)
-const curveToLeafW = () => (whitham.w0 ? frameArea(whitham.w0) : 1) * detA();
-
-// the family (Whitham curve through the current data), traced in its own worker so it never delays the
-// surface; the latest request wins. It is traced in both directions until the flow meets an obstacle
-// (a branch point reaching 0 or the unit circle, two colliding, or the continuation failing), and those
-// ends are the ends of the slider. It is drawn in the λ-plane when the switch is on. Moving along the
-// curve with the slider doesn't change the family, so only other edits of the spectral data (or
-// recentring) trigger a new trace.
-const family = { worker: null, busy: false, pending: null, key: null, data: null };
-const WHITHAM_RANGE = [-1.5, 1.5]; // until the first family arrives
+/** A candidate shows its path along the current edge of the tree in the λ-plane. */
 function showFamily() {
-  // a candidate shows its path along the edge instead of the Whitham family
-  widget.set({ family: state.cell && cand.path ? cand.path : $('showFamily').checked ? family.data : null });
+  widget.set({ family: state.cell && cand.path ? cand.path : null });
 }
-// Why the family ends at each end of the slider (from the trace; see WhithamCurve.endReason).
-function endText(e) {
-  const g = genus(), a = (i) => `α<sub>${i + 1}</sub>`;
-  if (e === undefined) return '…';
-  if (e === null) return 'beyond the traced range';
-  const who = e.idx.length === g && g > 1 ? 'all branch points' : e.idx.map(a).join(', ');
-  const plural = e.idx.length > 1;
-  if (e.kind === 'circle') return `${who} ${plural ? 'reach' : 'reaches'} the unit circle`;
-  if (e.kind === 'zero') return `${who} ${plural ? 'reach' : 'reaches'} 0`;
-  if (e.kind === 'collision') return `${a(e.idx[0])} and ${a(e.idx[1])} meet`;
-  if (e.kind === 'cycle') return `the numerics fail: ${a(e.idx[0])} crosses the period cycle of ${a(e.idx[1])}`;
-  return 'the continuation fails (other)';
-}
-function showEnds() {
-  const E = genus() >= 2 && family.data ? family.data.ends : undefined;
-  $('endL').innerHTML = genus() < 2 ? '–' : endText(E && E.neg);
-  $('endR').innerHTML = genus() < 2 ? '–' : endText(E && E.pos);
-}
-
-function familyRange() {
-  const P = family.data && family.data.points;
-  return P && P.length > 1 ? [P[0].s, P[P.length - 1].s] : WHITHAM_RANGE;
-}
-function requestFamily() {
-  if (genus() < 2) {
-    family.pending = null;
-    if (family.data) { family.data = null; family.key = null; showFamily(); }
-    showEnds();
-    return;
-  }
-  const key = JSON.stringify(state.alphas);
-  if (key === family.key || (family.data && key === whitham.key)) return;
-  family.key = key;
-  family.pending = { key, alphas: state.alphas.map((a) => a.slice()) };
-  pumpFamily();
-}
-function pumpFamily() {
-  if (family.busy || !family.pending) return;
-  if (!family.worker) {
-    family.worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-    family.worker.onmessage = (e) => {
-      family.busy = false;
-      const { result, error } = e.data;
-      // show every result, even if a newer request is queued: during a drag that keeps the paths live
-      if (genus() >= 2) {
-        family.data = error ? null : result;
-        showEnds();
-        showFamily();
-        toRootState();
-        whithamSlider.setRange(...familyRange());
-        whithamSlider.refresh();
-      }
-      pumpFamily();
-    };
-  }
-  const job = family.pending;
-  family.pending = null;
-  family.busy = true;
-  family.worker.postMessage({ id: 0, kind: 'family', params: { alphas: job.alphas, smax: 30, maxSteps: 400 } });
-}
-function whithamMove(s) {
-  if (genus() < 2) return s;
-  if (!whitham.curve) {
-    leafCheck();
-    try {
-      whitham.curve = new WhithamCurve(state.alphas);
-    } catch (e) {
-      $('whithamNote').textContent = String(e.message || e);
-      return 0;
-    }
-    whitham.w0 = leaf.w.map((v) => v.slice());
-    whitham.base = { z0: state.z0.slice(), width: state.width, height: state.height };
-    whitham.applied = domainKey();
-  }
-  // a domain edited by hand since the last move becomes the new base (pulled back to s = 0)
-  if (whitham.applied !== domainKey()) {
-    const [zr, zi] = whitham.z, m = Math.hypot(zr, zi);
-    whitham.base = {
-      z0: [state.z0[0] * zr - state.z0[1] * zi, state.z0[0] * zi + state.z0[1] * zr],
-      width: state.width * m, height: state.height * m,
-    };
-  }
-  const r = whitham.curve.at(s);
-  state.alphas = r.alphas;
-  whitham.s = r.s;
-  whitham.z = r.z;
-  whitham.key = JSON.stringify(state.alphas);
-  leafMoved(whitham.w0.map((v) => cdivC(v, r.z))); // tau is unchanged; W moves
-  tauShow(true);
-  if ($('whithamDomain').checked) {
-    // Gamma(s) = Gamma(0) / z
-    const [zr, zi] = r.z, d = zr * zr + zi * zi, m = Math.sqrt(d);
-    const b = whitham.base;
-    state.z0 = [(b.z0[0] * zr + b.z0[1] * zi) / d, (b.z0[1] * zr - b.z0[0] * zi) / d];
-    state.width = b.width / m;
-    state.height = b.height / m;
-    for (const sl of domainSliders) sl.refresh();
-  }
-  whitham.applied = domainKey();
-  widget.set({ alphas: state.alphas });
-  refreshAlphaValues();
-  whithamNote();
-  return r.s;
-}
-// The critical points of W along the family (the ticks) are where B_a has a common root, a
-// codimension-one condition, so the slider snaps onto them. Their positions come from the coarse
-// family and are refined on the accurate curve (golden section on W), once per family.
-function criticalPoints() {
-  const F = family.data;
-  if (!F || !whitham.curve || !F.critical.length) return [];
-  if (whitham.critical && whitham.critical.family === F && whitham.critical.curve === whitham.curve) return whitham.critical.s;
-  const W = (t) => whitham.curve.willmore(whitham.curve.at(t))[0];
-  const list = F.critical.map((c) => {
-    const P = F.points, sign = P[c].W > P[c - 1].W ? 1 : -1; // maximum or minimum
-    let a = P[c - 1].s, b = P[c + 1].s;
-    const gr = (Math.sqrt(5) - 1) / 2;
-    let x1 = b - gr * (b - a), x2 = a + gr * (b - a), f1 = sign * W(x1), f2 = sign * W(x2);
-    for (let it = 0; it < 40 && b - a > 1e-9; it++) {
-      if (f1 > f2) { b = x2; x2 = x1; f2 = f1; x1 = b - gr * (b - a); f1 = sign * W(x1); }
-      else { a = x1; x1 = x2; f1 = f2; x2 = a + gr * (b - a); f2 = sign * W(x2); }
-    }
-    return (a + b) / 2;
-  });
-  whitham.critical = { family: F, curve: whitham.curve, s: list };
-  return list;
-}
-// the critical points for the slider's ticks: refined once there is a curve, else the coarse family's
-function criticalS() {
-  if (whitham.curve) return criticalPoints();
-  const F = family.data;
-  return F ? F.critical.map((c) => F.points[c].s) : [];
-}
-
-// exact entry of W: the nearest point (to the current one) of the curve where W takes that value,
-// located on the family's samples (or the curve's, with the family off) and refined by secant steps
-function whithamEnter(target) {
-  if (genus() < 2) return;
-  if (!whitham.curve) whithamMove(whitham.s);
-  const C = whitham.curve;
-  if (!C) return;
-  target /= curveToLeafW(); // the curve and the family compute W in the curve's own frame
-  const W = (t) => C.willmore(C.at(t))[0];
-  const P = family.data ? family.data.points
-    : Array.from({ length: 61 }, (_, k) => { const t = -1.5 + k * 0.05; return { s: t, W: W(t) }; }); // family not in yet
-  let best = null;
-  for (let i = 1; i < P.length; i++) {
-    const a = P[i - 1].W - target, b = P[i].W - target;
-    if (a * b > 0 || a === b) continue;
-    const t = P[i - 1].s + (a / (a - b)) * (P[i].s - P[i - 1].s);
-    if (best === null || Math.abs(t - whitham.s) < Math.abs(best - whitham.s)) best = t;
-  }
-  if (best === null) { // out of the family's range: go to the nearest value it takes
-    best = P.reduce((m, p) => (Math.abs(p.W - target) < Math.abs(m.W - target) ? p : m)).s;
-  } else {
-    let t0 = best, t1 = best + 1e-3, f0 = W(t0) - target, f1 = W(t1) - target;
-    for (let it = 0; it < 8 && Math.abs(f1) > 1e-10 && f1 !== f0; it++) {
-      const t2 = t1 - (f1 * (t1 - t0)) / (f1 - f0);
-      if (!Number.isFinite(t2) || Math.abs(t2 - best) > 0.2) break;
-      [t0, f0, t1, f1] = [t1, f1, t2, W(t2) - target];
-    }
-    if (Math.abs(t1 - best) <= 0.2) best = t1;
-  }
-  const [a, b] = familyRange();
-  whithamMove(Math.max(a, Math.min(b, best)));
-}
-
-const whithamSlider = slider($('whithamRow'), {
-  label: '𝒲', min: -1.5, max: 1.5, step: 'any', get: () => whitham.s,
-  set: (v) => { whithamMove(v); },
-  display: () => { const W = currentW(); return W === null ? '–' : fixed(W, 4); },
-  entry: () => { const W = currentW(); return W === null ? '' : fixed(W, 4); },
-  enter: whithamEnter,
-  snap: criticalS,
-  play: { key: 'whitham' },
-});
-$('showFamily').addEventListener('change', showFamily);
-
-// "Flow to common root": to the nearest critical point of W along the family (where the differentials
-// have a common root on the unit circle), then put lam0 on that root
-function toRootState() {
-  $('toRoot').disabled = genus() < 2 || !criticalS().length;
-}
-$('toRoot').addEventListener('click', () => {
-  if (anim) stopAnim();
-  const nearest = () => criticalS().reduce((m, c) => (m === null || Math.abs(c - whitham.s) < Math.abs(m - whitham.s) ? c : m), null);
-  let s = nearest();
-  if (s === null) return;
-  whithamMove(s);          // creates the accurate curve if needed ...
-  s = nearest();           // ... so the critical point can be refined on it
-  whithamMove(s);
-  whithamSlider.refresh();
-  updateCommonRoots();
-  if (commonRoots.length) {
-    const d = ([re, im]) => Math.abs(wrapPi(Math.atan2(im, re) - state.theta0));
-    const r = commonRoots.reduce((m, c) => (d(c) < d(m) ? c : m));
-    state.theta0 = Math.atan2(r[1], r[0]);
-    widget.set({ theta0: state.theta0 });
-    refreshAlphaValues();
-  }
-  changed(false);
-});
-$('whithamDomain').addEventListener('change', () => { if (whitham.curve) { whithamMove(whitham.s); changed(false); } });
-
-// ------------------------------------------------------------------ the τ pad (τ at fixed ψ, leaf.js)
-
-// τ = w_2 / w_1 of the leaf's frame. Dragging sets a target that TauFlow chases a little per frame, with
-// ψ = Σ_j logit|α_j| fixed (a slice across the slider's τ-fibres; see TauFlow). With a lattice basis
-// τ is reduced into the paper's domain (F_6, F_3 or F_1) when the drag ends.
-const tauS = { flow: null, key: null, target: null, dragging: false, running: false, area: null };
-const tauPad = new TauPad($('tauPad'), (t, dragging) => {
-  tauS.target = t;
-  tauS.dragging = dragging;
-  if (anim) stopAnim();
-  tauChase();
-});
-const F_NAME = { F1: 'F₁', F3: 'F₃', F6: 'F₆' };
-const TAU_WHY = {
-  circle: ' (a branch point nears the unit circle)', zero: ' (a branch point nears 0)', collision: ' (two branch points meet)',
-  fold: ' (ψ is critical along the τ-fibre here, and τ folds over)',
-  solver: ' (the solver can’t continue)',
-};
-
-/**
- * A new leaf: the pad starts afresh, with a window around τ; in genus 2 on all of F_3, with the boundary
- * of S^2 (genus2.js).
- */
-function tauReset() {
-  tauS.flow = null;
-  tauS.target = null;
-  const t = genus() >= 2 ? tauOf(leaf.w) : null;
-  const g2 = genus() === 2;
-  if (g2) tauPad.showAll();
-  else if (t) tauPad.centre(t);
-  tauPad.set({
-    tau: t, mode: leaf.lattice ? leaf.lattice.kind : 'relative', target: null, blocked: false, trail: [], marks: [],
-    g2, curves: g2 ? s2BoundaryCurves() : null,
-  });
-  tauNote();
-}
-/** After a move along the leaf by other means (clear: forget the trail, e.g. at a new level of 𝒲). */
-function tauShow(clear = false) {
-  const t = genus() >= 2 ? tauOf(leaf.w) : null;
-  tauPad.set({ tau: t, mode: leaf.lattice ? leaf.lattice.kind : 'relative', ...(clear ? { trail: [], marks: [], target: null } : {}) });
-  tauNote();
-}
-function tauNote(blocked = false, why = null) {
-  const el = $('tauPadNote');
-  if (genus() < 2) { el.textContent = ''; return; }
-  const [x, y] = tauOf(leaf.w), L = leaf.lattice;
-  const t = `τ = ${fixed(x, 4)} + ${fixed(y, 4)} i`;
-  const where = (L ? `, in a basis of the lattice: in ${F_NAME[L.kind]}, region ${classOrder([x, y])}`
-    : leaf.frameKind === 'lock' ? ', relative to the frame (w, i w), w the locked period'
-      : ', relative to the frame at the anchor') + ({
-    locks: '\nDifferentials b₁, b₂ (for 𝒲): the two locked periods, a basis of Λ.',
-    'lock-basis': '\nDifferentials b₁, b₂ (for 𝒲): a locked period (or its primitive part) and the lattice vector completing it to a basis, with |Re b₂/b₁| ≤ ½ (the locked periods are not a basis of Λ).',
-  }[leaf.frameKind] || '');
-  const legend = genus() === 2 ? '\nBlue: where S² (a common root on the circle) meets the nodal curves (solid) and the open end (dashed).' : '';
-  el.textContent = t + where + (blocked ? `\nThe pad stops here${TAU_WHY[why] || ''}` : '') + legend;
-}
-
-function tauChase() {
-  if (tauS.running) return;
-  tauS.running = true;
-  const step = () => {
-    if (!tauS.target || genus() < 2) { tauS.running = false; return; }
-    let r;
-    try {
-      if (!tauS.flow || tauS.key !== akey()) {
-        tauS.flow = new TauFlow(state.alphas, leaf.w);
-        tauS.area = Math.abs(frameArea(leaf.w));
-      }
-      r = tauS.flow.moveToward(tauS.target, { budget: 12 });
-    } catch (e) {
-      tauS.running = false;
-      $('tauPadNote').textContent = String(e.message || e);
-      return;
-    }
-    state.alphas = r.alphas;
-    leafMoved(r.w); // the locked periods keep their coordinates in the frame: both keep their periods
-    tauS.key = leaf.key;
-    // the lattice spanned by the frame changes size: scale the domain with it
-    const area = Math.abs(frameArea(r.w));
-    if ($('whithamDomain').checked && tauS.area) {
-      const f = Math.sqrt(area / tauS.area);
-      state.width *= f; state.height *= f; state.z0 = state.z0.map((v) => v * f);
-      for (const sl of domainSliders) sl.refresh();
-    }
-    tauS.area = area;
-    whithamRecentre(); // the slider's family now runs through the new point, at its 𝒲
-    widget.set({ alphas: state.alphas });
-    refreshAlphaValues();
-    tauPad.trail.push(r.tau);
-    if (r.blocked) tauPad.marks.push(r.tau);
-    tauPad.set({ tau: r.tau, blocked: r.blocked });
-    tauNote(r.blocked, r.why);
-    const done = r.reached || r.blocked;
-    if (done && !tauS.dragging) { tauS.running = false; tauSettle(); changed(false); return; }
-    if (!busy) changed(true);
-    if (done) { tauS.running = false; return; }
-    requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-
-/** With a lattice basis: bring τ back into the domain for the invariant (a change of basis of Λ). */
-function tauSettle() {
-  const L = leaf.lattice;
-  if (!L) return;
-  const locks = leaf.locks.map(lockW), wd = displayFrame();
-  const basis = reduceFrame(leaf.w.map((w, k) => ({ w, m: L.m[k] })), L.kind);
-  leaf.w = basis.map((b) => b.w);
-  L.w = leaf.w;
-  L.m = basis.map((b) => b.m);
-  leaf.locks = locks.map((w) => relCoords(w, leaf.w));
-  if (leaf.A) leaf.A = wd.map((w) => relCoords(w, leaf.w)); // the differentials stay the same
-  if (whitham.curve) whitham.w0 = leaf.w.map((v) => cmulC(v, whitham.z));
-  tauS.flow = null;
-  tauShow();
-}
-
-// ------------------------------------------------------------------ the doubly periodic case
-
-// The plane B_a in the w-plane (period-pad.js) with the integer period vectors near it. Clicking one
-// moves the branch points (PlaneFlow, nearest in the λ-plane) so that the plane passes through it: it is
-// then locked in, and a second locked point makes the data doubly periodic, with the frame re-anchored to
-// a basis of the lattice. The locks are kept as coordinates in the leaf's frame, so they move with it.
-// Points are shaded by the predicted move of the branch points to lock them in (one linearised step,
-// predictMoves), a proxy for the chance of success; points predicted to need more than MOVE_MAX are not
-// shown. (Measured: predictions within a few percent of the actual moves; locks that failed, at a
-// collision or at 0, were predicted to need 0.56–0.64; all successes 0.38 or less.)
-const MOVE_MAX = 0.4;
-const dp = { points: null, flow: null, running: false, msg: '', fitGen: -1 };
-const lockW = ([x, y]) => [x * leaf.w[0][0] + y * leaf.w[1][0], x * leaf.w[0][1] + y * leaf.w[1][1]];
-function relCoords(w, [w1, w2]) {
-  const det = w1[0] * w2[1] - w1[1] * w2[0];
-  return [(w[0] * w2[1] - w[1] * w2[0]) / det, (w1[0] * w[1] - w1[1] * w[0]) / det];
-}
-const fmtM = (m) => `(${m.map((v) => (v < 0 ? `−${-v}` : String(v))).join(', ')})`;
-
-const periodPad = new PeriodPad($('periodPad'), {
-  onPick: dpPick,
-  onHover: (p) => {
-    $('dpHover').textContent = !p ? ''
-      : `m = ${fmtM(p.m)} · ${p.dist < 1e-8 ? 'a period' : `predicted move ${p.move.toFixed(3)} · distance ${p.dist.toExponential(1).replace('-', '−')}`}${p.lll ? ' · found by LLL' : ''}${dpLockIndex(p) >= 0 ? ' · locked' : ''}`;
-  },
-});
-$('dpBox').previousElementSibling.querySelector('.disc').addEventListener('click', () => dpUpdate());
-
-/** The corners of the domain of the surface in the z-plane (= the w-plane). */
-function domainCorners() {
-  const phi = state.curv ? -0.5 * hopfArg(state.alphas, state.theta0) : state.phi;
-  const c = Math.cos(phi), s = Math.sin(phi), hw = state.width / 2, hh = state.height / 2;
-  return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([u, v]) => [state.z0[0] + c * u - s * v, state.z0[1] + s * u + c * v]);
-}
-function dpLockIndex(p) {
-  return leaf.locks.findIndex((c) => { const w = lockW(c); return Math.hypot(w[0] - p.w[0], w[1] - p.w[1]) < 1e-6 * Math.max(1, Math.hypot(...w)); });
-}
-
-function dpUpdate() {
-  const g = genus(), note = $('dpNote');
-  periodPad.enabled = g >= 2 && !dp.running;
-  $('rescaleBtn').disabled = !(g >= 2 && leaf.lattice);
-  if (g < 2) { periodPad.set({ points: [], locked: [], frame: null, domain: null }); note.textContent = 'Needs genus ≥ 2.'; return; }
-  if ($('dpBox').hidden) return; // drawn when the section is opened
-  const key = JSON.stringify([state.alphas, leaf.locks, leaf.w]);
-  if (!dp.points || dp.points.key !== key) {
-    try {
-      const d = leafData(state.alphas), box = nearbyPeriods(d.ell);
-      const inBox = new Set(box.map((p) => p.m.join(',')));
-      const far = lllPeriods(d.ell).filter((p) => !inBox.has(p.m.join(','))).map((p) => ({ ...p, lll: true }));
-      const all = [...box, ...far];
-      // predicted moves, with the locked periods held in the plane
-      const locked = leaf.locks.map((c) => periodsOf(d.ell, lockW(c)).map(Math.round));
-      const isPeriod = (p) => p.dist < 1e-8 * Math.max(1, Math.hypot(...p.m));
-      const cand = all.filter((p) => !isPeriod(p));
-      const moves = g > 2 && cand.length ? predictMoves(state.alphas, d.ell, cand.map((p) => p.m), locked) : cand.map(() => 0);
-      cand.forEach((p, k) => { p.move = moves[k]; });
-      all.filter(isPeriod).forEach((p) => { p.move = 0; });
-      const list = all.filter((p) => p.move <= MOVE_MAX);
-      dp.points = { key, ell: d.ell, list, hidden: all.length - list.length };
-    } catch { dp.points = { key, ell: null, list: [], hidden: 0 }; }
-  }
-  periodPad.set({ points: dp.points.list, moveMax: MOVE_MAX, locked: leaf.locks.map(lockW), frame: displayFrame(), domain: domainCorners() });
-  if (dp.fitGen !== leaf.gen) { dp.fitGen = leaf.gen; periodPad.fit(); periodPad.draw(); }
-  const L = leaf.lattice;
-  let text;
-  if (dp.running) text = 'Moving…';
-  else if (g === 2) text = 'Genus 2: the plane is all of ℝ², so every integer vector is a period (Λ = ℤ², invariant (1, 1, 0), τ in F₃).';
-  else if (L) text = `Doubly periodic: Λ = ℤ m₁ + ℤ m₂ with m₁ = ${fmtM(L.m[0])}, m₂ = ${fmtM(L.m[1])}.\nInvariant (n₁, n₂, n₃) = (${L.n.join(', ')}); τ in ${F_NAME[L.kind]}. Click a locked point to release it.`;
-  else if (leaf.locks.length === 1) text = 'One period locked in. Click a second point to make the data doubly periodic, or the locked one to release it.';
-  else text = 'Click a point to move the branch points so that the plane passes through it.';
-  if (g > 2 && dp.points.hidden && leaf.locks.length < 2) text += ` (${dp.points.hidden} points not shown: predicted move over ${MOVE_MAX}.)`;
-  note.textContent = (dp.msg ? dp.msg + '\n' : '') + text;
-}
-
-function dpPick(p) {
-  if (dp.running || genus() < 2) return;
-  dp.msg = '';
-  $('dpHover').textContent = ''; // describes the point before the move
-  const i = dpLockIndex(p);
-  if (i >= 0) { // release
-    leaf.locks.splice(i, 1);
-    if (genus() > 2) {
-      if (leaf.locks.length === 1) dpOneLock(lockW(leaf.locks[0]));
-      else { leaf.w = displayFrame(); leaf.A = null; leaf.lattice = null; leaf.frameKind = 'anchor'; whithamRecentre(); tauReset(); }
-    }
-    dpUpdate();
-    return;
-  }
-  if (genus() === 2) { dp.msg = 'Every integer vector is already a period.'; dpUpdate(); return; }
-  if (leaf.locks.length >= 2) { dp.msg = 'Two periods are locked in: release one first.'; dpUpdate(); return; }
-  const ell = dp.points && dp.points.ell;
-  if (!ell) return;
-  const lockedM = leaf.locks.map((c) => periodsOf(ell, lockW(c)).map(Math.round));
-  if (lockedM.length && Math.abs(frameArea([lockW(leaf.locks[0]), p.w])) < 1e-9 * Math.hypot(...p.w) ** 2) {
-    dp.msg = 'That point is a multiple of the locked one.'; dpUpdate(); return;
-  }
-  if (p.dist < 1e-9) { // already in the plane: lock it without moving
-    if (lockedM.length) dpLattice(ell, [...lockedM, p.m]);
-    else dpOneLock(p.w);
-    dpUpdate();
-    return;
-  }
-  if (anim) stopAnim();
-  try {
-    dp.flow = new PlaneFlow(state.alphas, [...lockedM, p.m], ell);
-  } catch (e) { dp.msg = String(e.message || e); dpUpdate(); return; }
-  dp.running = true;
-  leaf.locks = []; // carried by the flow as period vectors until it is done
-  dpUpdate();
-  const step = () => {
-    const r = dp.flow.advance(12);
-    state.alphas = r.alphas;
-    // between leaves: no frame to carry; keep the locks (as period vectors, in the flow)
-    leaf.key = akey();
-    leaf.w = [[1, 0], [0, 1]];
-    leaf.lattice = null;
-    leaf.A = null;
-    leaf.frameKind = 'anchor';
-    whithamRecentre();
-    widget.set({ alphas: state.alphas });
-    refreshAlphaValues();
-    if (r.done || r.blocked) {
-      dp.running = false;
-      const d = dp.flow.data(), ms = dp.flow.ms;
-      leaf.gen++;
-      if (r.done && ms.length === 2) dpLattice(d.ell, ms);
-      else if (r.done) dpOneLock(frameVector(d.ell, ms[0]));
-      else leaf.locks = [];
-      if (r.blocked) {
-        dp.msg = `The move stopped${({
-          circle: ': a branch point reached the unit circle', zero: ': a branch point reached 0',
-          collision: ': two branch points met', cost: ': the periods became too costly to compute (branch points nearly meeting)',
-        })[r.why] || ': the continuation can’t follow'}. The data are left where it stopped.`;
-      }
-      computePlanes();
-      tauReset();
-      changed(false);
-      return;
-    }
-    if (!busy) changed(true);
-    requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-/** One locked period w (no lattice yet): the frame (w, i w). */
-function dpOneLock(w) {
-  leaf.lattice = null;
-  leaf.A = null;
-  leaf.frameKind = 'lock';
-  leaf.w = [w.slice(), cmulC([0, 1], w)];
-  leaf.locks = [[1, 0]];
-  whithamRecentre();
-  tauReset();
-}
-/**
- * Two independent periods m1, m2 (in the order they were locked): leaf.w becomes the adapted basis of Λ
- * (for the τ pad and the invariants), and the differentials b_1, b_2 are the two locked periods if they
- * are a basis of Λ (the second negated if needed for the orientation). Otherwise b_1 is the first locked
- * period if it is primitive in Λ, else the second if it is, else the primitive part of the first; and b_2
- * is the lattice vector completing b_1 to an oriented basis, shifted by multiples of b_1 so that
- * |Re b_2/b_1| <= 1/2 (so b_2 = τ' b_1 with τ' the τ of that basis, the nearest to b_1 i).
- */
-function dpLattice(ell, ms) {
-  const L = latticeFrame(ell, ...saturate(ms[0], ms[1]));
-  leaf.lattice = L;
-  leaf.w = L.w;
-  const wm = ms.map((m) => frameVector(ell, m));
-  const c = wm.map((w) => relCoords(w, L.w).map(Math.round)); // integers: the locked periods are in Λ
-  const det = c[0][0] * c[1][1] - c[0][1] * c[1][0];
-  if (Math.abs(det) === 1) {
-    leaf.A = det > 0 ? c : [c[0], c[1].map((v) => -v)];
-    leaf.frameKind = 'locks';
-  } else {
-    const gcd = (a, b) => (b ? gcd(b, a % b) : Math.abs(a));
-    const g0 = gcd(...c[0]), g1 = gcd(...c[1]);
-    const b1 = g0 === 1 ? c[0] : g1 === 1 ? c[1] : c[0].map((v) => v / g0);
-    // b_2 = (x, y) with b1[0] y - b1[1] x = 1 (extended Euclid), then reduced modulo b_1
-    const egcd = (a, b) => { if (!b) return [Math.sign(a), 0]; const [s, t] = egcd(b, a % b); return [t, s - Math.trunc(a / b) * t]; };
-    const [s0, t0] = egcd(b1[0], b1[1]); // b1[0] s0 + b1[1] t0 = 1
-    let b2 = [-t0, s0];
-    const vec = (cc) => [cc[0] * L.w[0][0] + cc[1] * L.w[1][0], cc[0] * L.w[0][1] + cc[1] * L.w[1][1]];
-    const k = Math.round(cdivC(vec(b2), vec(b1))[0]);
-    b2 = [b2[0] - k * b1[0], b2[1] - k * b1[1]];
-    leaf.A = [b1, b2];
-    leaf.frameKind = 'lock-basis';
-  }
-  leaf.locks = wm.map((w) => relCoords(w, leaf.w));
-  whithamRecentre();
-  tauReset();
-}
-
-// ------------------------------------------------------------------ rescaling the domain to the lattice
-
-// With a lattice: keep the centre z0 and the grid angle, and make the domain the smallest rectangle that
-// encloses the parallelogram spanned by the frame w_1, w_2 (the differentials b_1, b_2), centred at z0.
-// In grid coordinates r_k = e^{-i phi} w_k it has width |Re r_1| + |Re r_2| and height |Im r_1| + |Im r_2|,
-// so it contains a whole period cell. (The shooting search along the grid lines, closingInfo in cmc.js,
-// is no longer in the panel; see PLAN.)
-$('rescaleBtn').addEventListener('click', () => {
-  if (!leaf.lattice) return;
-  const phi = state.curv ? -0.5 * hopfArg(state.alphas, state.theta0) : state.phi;
-  const r = displayFrame().map(([x, y]) => [Math.cos(phi) * x + Math.sin(phi) * y, Math.cos(phi) * y - Math.sin(phi) * x]);
-  state.width = Math.abs(r[0][0]) + Math.abs(r[1][0]);
-  state.height = Math.abs(r[0][1]) + Math.abs(r[1][1]);
-  for (const sl of domainSliders) sl.refresh();
-  const at = state.z0[0] || state.z0[1] ? `the domain centre z₀ = ${fmt(state.z0[0], 3)} + ${fmt(state.z0[1], 3)} i` : 'the origin';
-  $('rescaleInfo').textContent = `Domain ${fmt(state.width, 4)} × ${fmt(state.height, 4)}: encloses the parallelogram of w₁, w₂, translated to be centred at ${at}.`;
-  if (whitham.curve) whitham.applied = null; // becomes the new base at the next Whitham move
-  needFrame = true;
-  changed(false);
-});
 
 // ------------------------------------------------------------------ appearance
 
@@ -1601,20 +889,6 @@ function animStep(now) {
     state.theta0 = wrapPi(state.theta0 + 0.3 * dt);
     widget.set({ theta0: state.theta0 });
     refreshAlphaValues();
-  } else if (anim.key === 'whitham') {
-    if (!busy) {
-      anim.dir = anim.dir || 1;
-      const want = whitham.s + anim.dir * 0.15 * dt;
-      const [a, b] = familyRange();
-      const got = whithamMove(Math.max(a, Math.min(b, want)));
-      if (Math.abs(got - want) > 1e-9 || got <= a || got >= b) anim.dir = -anim.dir;
-      whithamSlider.refresh();
-    }
-  } else {
-    let v = state.tau[anim.i] + 0.4 * dt;
-    if (v > 2 * PI) v -= 4 * PI;
-    state.tau[anim.i] = v;
-    tauSliders[anim.i].refresh();
   }
   // only ask for a new surface when the worker has caught up
   if (!busy) changed(true);
@@ -1631,10 +905,10 @@ presetSel.addEventListener('change', () => {
   const p = PRESETS[+presetSel.value];
   if (!p) return;
   if (anim) stopAnim();
+  leaveCandidate();
   Object.assign(state, structuredClone(VIEW_DEFAULTS), structuredClone(p.s));
   syncTau();
   refreshAll();
-  saveHomeDomain();
   viewer.resetOrientation();
   needFrame = true;
   changed(false);
@@ -1644,9 +918,6 @@ presetSel.addEventListener('change', () => {
 $('frameBtn').addEventListener('click', () => viewer.frame());
 $('viewReset').addEventListener('click', () => { viewer.resetOrientation(); viewer.frame(); });
 
-// the domain of the last preset or link, which the domain sliders' reset buttons return to
-let homeDomain = null;
-const saveHomeDomain = () => { homeDomain = structuredClone({ z0: state.z0, width: state.width, height: state.height, curv: state.curv, phi: state.phi }); };
 $('pngBtn').addEventListener('click', () => download(viewer.snapshot(), 'cmc-surface.png'));
 $('objBtn').addEventListener('click', () => {
   const url = URL.createObjectURL(new Blob([viewer.toOBJ()], { type: 'text/plain' }));
@@ -1674,19 +945,14 @@ function download(href, name) {
 
 function refreshAll() {
   buildAlphaList();
-  buildTau();
   widget.set({ alphas: state.alphas, theta0: state.theta0, divisor: [] });
   refreshGen();
-  for (const s of [...domainSliders, phiSlider, ...appearanceSliders]) s.refresh();
+  for (const s of appearanceSliders) s.refresh();
   $('res').value = String(state.res);
   if (!$('res').value) { $('res').add(new Option(String(state.res), String(state.res))); $('res').value = String(state.res); }
   $('acc').value = state.adaptive ? 'adaptive' : String(state.hmax);
   if (!$('acc').value) { $('acc').add(new Option(`h ≤ ${state.hmax}`, String(state.hmax))); $('acc').value = String(state.hmax); }
   viewer.setScale(1 / (2 * state.H));
-  $('rescaleInfo').textContent = '';
-  whithamRecentre();
-  $('curv').checked = state.curv;
-  $('phiRow').classList.toggle('hide', state.curv);
   $('colour').value = state.colour;
   viewer.setStyle({ gridStep: state.gridStep, lineWidth: state.lineW, ...textureStyle() });
 }
@@ -1701,18 +967,19 @@ window.addEventListener('hashchange', () => {
   if (anim) stopAnim();
   syncTau();
   refreshAll();
-  saveHomeDomain();
   needFrame = true;
   changed(false);
 });
 
 if (location.hash) { readHash(); snapLinkLam(); clearHash(); }
+// without a link: a typical case, candidate 2 for internal tau = 0.45 + 0.95i (candidates 2 and 3 exist)
+else pendingCandidate = [0.45, 0.95, 2];
 syncTau();
 makeWorker();
 refreshAll();
-saveHomeDomain();
 setBackground(state.bg);
-changed(false);
+// the candidate draws itself when it arrives; otherwise draw the data from the link
+if (!pendingCandidate) changed(false);
 function runPendingCandidate() {
   $('tauRe').value = String(pendingCandidate[0]); $('tauIm').value = String(pendingCandidate[1]);
   const two = pendingCandidate[2] === 2;

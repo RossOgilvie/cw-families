@@ -149,13 +149,16 @@ Each milestone ends in a check that can be verified.
    The third choice there (node a + node b) lies on a 3-sphere: a CMC torus in S^3 with rectangular external τ (F14).
 10. Branch points near the open end (November 2026).
    Along a genus 2 edge that ends at an open end, the drawing of candidate 2 has spikes (`Viewer.setMarkers`) at the four half-periods of the cell, along the outward direction from the centroid: they are the minima of the conformal factor all along the edge (checked at t = 0.3, 0.1, 0.03, 0.003) and the branch points of the limit, so t = 0.1 or 0.01 already shows the branched double cover (Ross).
+11. Interface cleanup (17 November 2026).
+   The panels Plane of differentials, Whitham deformation and Isospectral deformation are removed from the page, with their code in app.js (the 𝒲 slider and family, the τ pad of the leaf, the period pad and locks, the domain and isospectral sliders). The modules `whitham.js`, `leaf.js` and `period-pad.js` stay: the tree and the tests use the first two.
+   Without a link, the page starts with candidate 2 for internal τ = 0.45 + 0.95i.
 
 ## TODO
 
 1. Rewrite the README for cw-families: it still describes cmc-immersion (title, controls, layout, the removed panels).
 2. The label of a λ_j overlaps the label of the branch point it sits on.
 3. The page title and subtitle ("CMC surfaces") and `about.html` still describe cmc-immersion.
-4. Editing the domain sliders while a candidate is shown has no effect (the candidate's cell is drawn); editing the spectral data leaves the candidate.
+4. Editing the spectral data leaves the candidate. (The domain sliders were removed with the Plane of differentials, 17 November 2026.)
 5. Headless checks: `chromium --virtual-time-budget` does not finish loading module workers that import other modules, so screenshots of worker results need a real-time wait (a small DevTools-protocol script).
 
 Next directions (Ross, 16 November 2026):
