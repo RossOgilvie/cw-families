@@ -124,6 +124,36 @@ const nearestSheet = (Q, p) => {
   return { lam: p.lam.slice(), nu: dist(ns[0], p.nu) <= dist(ns[1], p.nu) ? ns[0] : ns[1] };
 };
 
+/**
+ * Refine an arrival (a passage of a pair through a sigma-node) between hi, where the pair is off S^1, and
+ * lo, where it is not. Near the node the pair moves like a square root of the edge parameter on either
+ * side, so g = -dist^2 (off S^1: dist = log|lam_P|) or +dist^2 (on S^1: dist = the angle between P and Q)
+ * is close to linear through the arrival: regula falsi with the Illinois modification, keeping the bracket
+ * (bisection if a solve fails or the step leaves the bracket). evalAt(m, s) solves at m continuing from
+ * the state s of the off side and returns { ok, off, dist, s }. gHi, gLo: g at hi and lo. Stops when the
+ * pair is within 1e-7 of S^1 on the off side (classifyPair counts a pair within 1e-8 of S^1 as on it, so
+ * the off-side distance cannot fall much below that; the bisection before this ran on to a 1e-13
+ * bracket, 50 solves, without getting closer) or the bracket is below 1e-13.
+ * Returns { hi, s, evals }: the off-side end and its state.
+ */
+function refineArrival(hi, lo, gHi, gLo, s, evalAt) {
+  let side = 0, bisect = false, evals = 0;
+  for (let it = 0; it < 60; it++) {
+    if (Math.abs(hi - lo) <= 1e-13 || Math.sqrt(-gHi) < 1e-7) break;
+    let m = bisect || !(gLo > gHi) ? (hi + lo) / 2 : (hi * gLo - lo * gHi) / (gLo - gHi);
+    const a = Math.min(hi, lo), b = Math.max(hi, lo), margin = 1e-3 * (b - a);
+    if (!(m > a + margin && m < b - margin)) m = Math.min(b - margin, Math.max(a + margin, m));
+    bisect = false;
+    const R = evalAt(m, s);
+    evals++;
+    if (!R.ok) { lo = m; bisect = true; continue; }
+    const g = R.off ? -R.dist * R.dist : R.dist * R.dist;
+    if (R.off) { hi = m; gHi = g; s = R.s; if (side === -1) gLo /= 2; side = -1; } else { lo = m; gLo = g; if (side === 1) gHi /= 2; side = 1; }
+  }
+  return { hi, s, evals };
+}
+const gOf = (cls) => (cls.kind === 'off' ? -cls.dist * cls.dist : cls.dist * cls.dist);
+
 /** Solve the pair named name at r, continuing from start = { P, Q }. */
 function pairAt(tau, name, r, start) {
   const al = [[-r, 0]], Q = new QMap(al), t = genus1Scale(r);
@@ -174,11 +204,12 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, 
     for (const n of names) {
       if (r !== next && cur[n].cls && (cur[n].cls.kind === 'off') !== (res[n].cls.kind === 'off')) {
         const fromOff = cur[n].cls.kind === 'off';
-        let hi = fromOff ? r : next, lo = fromOff ? next : r, sHi = fromOff ? cur[n] : res[n];
-        for (let i = 0; i < 50 && Math.abs(hi - lo) > 1e-13; i++) {
-          const m = (hi + lo) / 2, R = pairAt(tau, n, m, sHi);
-          if (R.ok && R.cls.kind === 'off') { hi = m; sHi = { P: R.P, Q: R.Q, cls: R.cls }; } else lo = m;
-        }
+        const offSide = fromOff ? cur[n] : res[n], other = fromOff ? res[n] : cur[n];
+        const ref = refineArrival(fromOff ? r : next, fromOff ? next : r, gOf(offSide.cls), gOf(other.cls), offSide, (m, st) => {
+          const Rm = pairAt(tau, n, m, st);
+          return { ok: Rm.ok, off: Rm.ok && Rm.cls.kind === 'off', dist: Rm.ok ? Rm.cls.dist : 0, s: { P: Rm.P, Q: Rm.Q, cls: Rm.cls } };
+        });
+        const hi = ref.hi, sHi = ref.s;
         const R = pairAt(tau, n, hi, sHi);
         const mid = [(R.P.lam[0] + R.Q.lam[0]) / 2, (R.P.lam[1] + R.Q.lam[1]) / 2], l = Math.hypot(...mid);
         const gap = dist(R.P.lam, R.Q.lam);
@@ -197,7 +228,7 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, 
               double = { name: o, lamNode: [mo[0] / lo2, mo[1] / lo2] };
             }
           }
-          events.push({ name: n, r: hi, t: R.t, W: Wint(hi, R.t), P: R.P, Q: R.Q, lamNode: [mid[0] / l, mid[1] / l], gap, others, double });
+          events.push({ name: n, r: hi, t: R.t, W: Wint(hi, R.t), P: R.P, Q: R.Q, lamNode: [mid[0] / l, mid[1] / l], gap, others, double, refineEvals: ref.evals });
         }
         else { end = { r: hi, why: `the ${n} pair jumped branches (gap ${gap.toFixed(3)})` }; jumped = true; }
       }
@@ -224,11 +255,13 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, 
  * Returns { lattice: [e1, e2], doubled, chars, us, W (residue formula on the closing lattice), tauExt,
  *   defects: { node (|M - (±I)| at sigma-nodes), closing (|f(z + e) - f(z)| for e = e1, e2) } }.
  */
-export function candidate(alphas, basis, syms, { h = 0.002 } = {}) {
+export function candidate(alphas, basis, syms, { h = Infinity } = {}) {
   const Z = killingField(alphas);
   const lams = syms.map((s) => s.lam);
   const I = new PairIntegrator(alphas, lams);
-  h = Math.min(h, I.stepCap(Z));
+  // a quarter of the step cap: the characters and W do not depend on it, and the closing defect (RK4,
+  // ~h^4) is ~1e-6 (with h = 0.002 it was ~1e-9, at ten times the cost)
+  h = Math.min(h, I.stepCap(Z) / 4);
   const us = syms.map((s) => leftEigenvector(Z, s.lam, s.nu));
   const [w1, w2] = basis;
   const shoot = (w) => { const y = I.initialState(Z); const L = Math.hypot(...w); I.march(y, w[0] / L, w[1] / L, L, h); return y; };
@@ -449,20 +482,20 @@ export function genus2Edge(c1, { eps = 1e-3, tMin = 1e-3, dSigma = 0.1, maxEvent
       // arrival (a passage through a sigma-node, onto S^1 or off it): bisection in sigma, continuing from the
       // side where the pair is off S^1
       const fromOff = cur.cls.kind === 'off';
-      let hi = fromOff ? sigma : next, lo = fromOff ? next : sigma;
-      let sHi = fromOff ? { P: cur.P, Q: cur.Q } : { P: R.P, Q: R.Q }, bHi = fromOff ? beta : sol.beta, refHi = fromOff ? ref : R.ell;
-      for (let i = 0; i < 50 && Math.abs(hi - lo) > 1e-13; i++) {
-        const m = (hi + lo) / 2, sm = solveBeta(Math.exp(m), bHi, refHi);
-        if (!sm.ok) { lo = m; continue; }
-        const Rm = pairAt2(alphasOf(Math.exp(m), sm.beta), sHi, sm.ell);
-        if (Rm.ok && Rm.cls.kind === 'off') { hi = m; sHi = { P: Rm.P, Q: Rm.Q }; bHi = sm.beta; refHi = sm.ell; } else lo = m;
-      }
+      const s0 = fromOff ? { P: cur.P, Q: cur.Q, beta, ref } : { P: R.P, Q: R.Q, beta: sol.beta, ref: R.ell };
+      const rf = refineArrival(fromOff ? sigma : next, fromOff ? next : sigma, gOf(fromOff ? cur.cls : R.cls), gOf(fromOff ? R.cls : cur.cls), s0, (m, st) => {
+        const sm = solveBeta(Math.exp(m), st.beta, st.ref);
+        if (!sm.ok) return { ok: false };
+        const Rm = pairAt2(alphasOf(Math.exp(m), sm.beta), st, sm.ell);
+        return { ok: Rm.ok, off: Rm.ok && Rm.cls.kind === 'off', dist: Rm.ok ? Rm.cls.dist : 0, s: { P: Rm.P, Q: Rm.Q, beta: sm.beta, ref: sm.ell } };
+      });
+      const hi = rf.hi, sHi = { P: rf.s.P, Q: rf.s.Q }, bHi = rf.s.beta, refHi = rf.s.ref;
       const tE = Math.exp(hi), alE = alphasOf(tE, bHi), Re = pairAt2(alE, sHi, refHi);
       const mid = [(Re.P.lam[0] + Re.Q.lam[0]) / 2, (Re.P.lam[1] + Re.Q.lam[1]) / 2], l = Math.hypot(...mid);
       const gap = dist(Re.P.lam, Re.Q.lam);
       if (gap < 1e-2) {
         const W = Wat(alE, Re.k);
-        events.push({ t: tE, s: Math.log(tA / tE), alphas: alE, k: Re.k, W, lamNode: [mid[0] / l, mid[1] / l], P: Re.P, Q: Re.Q, gap, name: otherName });
+        events.push({ t: tE, s: Math.log(tA / tE), alphas: alE, k: Re.k, W, lamNode: [mid[0] / l, mid[1] / l], P: Re.P, Q: Re.Q, gap, name: otherName, refineEvals: rf.evals });
         samples.push({ t: tE, s: Math.log(tA / tE), alphas: alE, W, pair: Re.cls, k: Re.k, pts: { P: Re.P, Q: Re.Q } });
         if (events.length >= maxEvents) { end = { t: tE, why: 'event' }; break; }
       } else { end = { t: tE, why: `the pair jumped branches (gap ${gap.toFixed(3)})` }; break; }
