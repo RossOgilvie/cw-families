@@ -6,11 +6,13 @@ import {
   aPoly, kappa0, killingField, flowKilling, isospectralBasis, divisor, FrameIntegrator,
   computeSurface, hopfArg, closingInfo,
 } from '../src/cmc/cmc.js';
-import { periodVector, periodLattice, commonRootsOnCircle } from '../src/cmc/periods.js';
+import { periodVector, periodLattice, commonRootsOnCircle, basicPeriods, thetaPoly } from '../src/cmc/periods.js';
 import { WhithamCurve } from '../src/cmc/whitham.js';
 import { RootFlow, symData } from '../src/cmc/rootflow.js';
 import { ellipticKE, nodalBoundary, f0, openEndTau } from '../src/cmc/genus2.js';
 import { PairIntegrator, leftEigenvector, nuAt, qmul, qdiv, computeGenSurface } from '../src/cmc/gensym.js';
+import { QMap, genus0Resonance, classifyPair } from '../src/cmc/resonance.js';
+import { generator } from '../src/cmc/cmc.js';
 import {
   TauFlow, leafData, periodsOf, rationalPlanes, saturate, reduceFrame, classOrder, nearbyPeriods,
   PlaneFlow, latticeFrame, predictMoves,
@@ -482,6 +484,94 @@ console.log('generalized Sym formula f = Q(u1 F(lam1)) Q(u2 F(lam2))^{-1} (cw_ca
     check(`Clifford torus: projection = ${C.projection}, stereographic extent ${ext.toFixed(2)} bounded`, C.projection === 'sphere' && ext < 20 ? 0 : 1, 0.5);
     const B = computeGenSurface({ alphas: [[0.5, 0]], lams: [[0.5, 0], [0, 1]], signs: [1, 1], width: 4, height: 4, nx: 30, ny: 30, hmax: 0.01 });
     check(`branch point as a Sym point: projection = ${B.projection} (on no 3-sphere)`, B.projection === 'pca' ? 0 : 1, 0.5);
+  }
+}
+
+// ------------------------------------------------------------------ q and resonance pairs (resonance.js)
+console.log('the map q = (log mu_1, log mu_i) and resonance pairs (cw_candidates.md, F3, F6):');
+{
+  const ab = ([r, i]) => Math.hypot(r, i);
+  // 1. genus 0: q^1, q^2 are the eigenvalues of X = U + V and X = i(U - V) on the eigenline of (lam, nu)
+  //    (the left eigenvector of zeta(lam) for nu/lam, as for the generalized Sym points)
+  {
+    const Q = new QMap([]), Z = killingField([]), G = new Float64Array(24);
+    let worst = 0;
+    for (const lam of [[0.3, 0.4], [-1.2, 0.7], [0.05, -2]]) for (const nu of Q.nus(lam)) {
+      const u = leftEigenvector(Z, lam, nu), q = Q.q(lam, nu);
+      [[1, 0], [0, 1]].forEach(([cr, ci], j) => {
+        generator(Z, 2, 0, cr, ci, G);
+        const d2 = lam[0] ** 2 + lam[1] ** 2, il = [lam[0] / d2, -lam[1] / d2];
+        const X = [0, 1, 2, 3].map((e) => {
+          const a = [G[2 * e], G[2 * e + 1]], b = [G[8 + 2 * e], G[9 + 2 * e]], c = [G[16 + 2 * e], G[17 + 2 * e]];
+          return [a[0] * il[0] - a[1] * il[1] + b[0] + c[0] * lam[0] - c[1] * lam[1], a[0] * il[1] + a[1] * il[0] + b[1] + c[0] * lam[1] + c[1] * lam[0]];
+        });
+        // (u^T X)_1 / u_1, u = (u1, u2) complex
+        const u1 = [u[0], u[1]], u2 = [u[2], u[3]];
+        const mul = (x, y) => [x[0] * y[0] - x[1] * y[1], x[0] * y[1] + x[1] * y[0]];
+        const big = ab(u1) > ab(u2);
+        const num = big ? [mul(u1, X[0])[0] + mul(u2, X[2])[0], mul(u1, X[0])[1] + mul(u2, X[2])[1]]
+          : [mul(u1, X[1])[0] + mul(u2, X[3])[0], mul(u1, X[1])[1] + mul(u2, X[3])[1]];
+        const den = big ? u1 : u2, dd = den[0] ** 2 + den[1] ** 2;
+        const m = [(num[0] * den[0] + num[1] * den[1]) / dd, (num[1] * den[0] - num[0] * den[1]) / dd];
+        worst = Math.max(worst, ab([m[0] - q[j][0], m[1] - q[j][1]]));
+      });
+    }
+    check('genus 0: q = eigenvalues of X(lam) on the eigenline (both sheets)', worst, 1e-13);
+  }
+  // 2. genus 0 closed forms: two solutions per gamma, over S^1 iff |k| <= 1/pi; Newton from a perturbed start
+  {
+    const Q = new QMap([]);
+    for (const k of [[0.2, 0.1], [0.31, 0.05], [0.5, -0.3]]) {
+      const gam = [[0, 2 * Math.PI * k[0]], [0, 2 * Math.PI * k[1]]];
+      const inside = Math.hypot(...k) * Math.PI < 1;
+      let worst = 0, circ = 0, newton = 0;
+      for (const sol of genus0Resonance(k)) {
+        const q1 = Q.q(sol.P.lam, sol.P.nu), q2 = Q.q(sol.Q.lam, sol.Q.nu);
+        worst = Math.max(worst, ...[0, 1].map((j) => ab([q1[j][0] - q2[j][0] - gam[j][0], q1[j][1] - q2[j][1] - gam[j][1]])));
+        // over S^1 (|nu| = 1) inside the threshold, a pair with |nu_P| |nu_Q| = 1 off it
+        circ = Math.max(circ, inside ? Math.abs(ab(sol.P.nu) - 1) + Math.abs(ab(sol.Q.nu) - 1)
+          : Math.abs(ab(sol.P.nu) * ab(sol.Q.nu) - 1) + (Math.abs(ab(sol.P.nu) - 1) < 1e-3 ? 1 : 0));
+        const pert = (p) => {
+          const lam = [p.lam[0] * 1.05 + 0.02, p.lam[1] * 0.97], ns = Q.nus(lam);
+          return { lam, nu: ab([ns[0][0] - p.nu[0], ns[0][1] - p.nu[1]]) < ab([ns[1][0] - p.nu[0], ns[1][1] - p.nu[1]]) ? ns[0] : ns[1] };
+        };
+        const R = Q.resonance(pert(sol.P), pert(sol.Q), gam);
+        newton = Math.max(newton, R.ok ? ab([R.P.lam[0] - sol.P.lam[0], R.P.lam[1] - sol.P.lam[1]]) : 1);
+      }
+      const tag = `k = (${k}), pi|k| = ${(Math.PI * Math.hypot(...k)).toFixed(3)}`;
+      check(`genus 0, ${tag}: q(P) - q(Q) = gamma for both closed-form solutions`, worst, 1e-13);
+      check(`genus 0, ${tag}: ${inside ? 'over S^1' : 'a rho-pair off S^1'}`, circ, 1e-12);
+      check(`genus 0, ${tag}: Newton from a perturbed start finds it`, newton, 1e-10);
+    }
+    // at the threshold the two solutions coincide in a sigma-node: nu_Q = -nu_P
+    const kt = [Math.cos(0.7) / Math.PI, Math.sin(0.7) / Math.PI];
+    const [s1] = genus0Resonance(kt);
+    const kinds = [[0.2, 0.1], [0.5, -0.3]].map((k) => classifyPair(genus0Resonance(k)[0].P, genus0Resonance(k)[0].Q).kind);
+    check(`genus 0: classifyPair gives on, off, node (got ${kinds.join(', ')}, ${classifyPair(s1.P, s1.Q, 1e-6).kind})`,
+      kinds.join() === 'on,off' && classifyPair(s1.P, s1.Q, 1e-6).kind === 'node' ? 0 : 1, 0.5);
+    check('genus 0, pi|k| = 1: a sigma-node over S^1 (nu_Q = -nu_P, |nu| = 1)', ab([s1.P.nu[0] + s1.Q.nu[0], s1.P.nu[1] + s1.Q.nu[1]]) + Math.abs(ab(s1.P.nu) - 1), 1e-7);
+  }
+  // 3. branch points (F6): Re q = 0, q(alpha) = q(1/conj alpha), and 2 q(alpha_2) is the period of a cycle B_1 ± B_2
+  for (const al of [[[0.5, 0.2]], [[0.4, 0.3], [-0.2, 0.5]]]) {
+    const Q = new QMap(al), g = al.length;
+    const qs = Q.branch.map((e) => Q.q(e, [0, 0]));
+    check(`g=${g}: Re q = 0 at the branch points`, Math.max(...qs.flat().map(([re]) => Math.abs(re))), 1e-11);
+    check(`g=${g}: q(alpha_j) = q(1/conj alpha_j)`, Math.max(...al.map((_, j) => Math.max(...[0, 1].map((c) => ab([qs[2 * j][c][0] - qs[2 * j + 1][c][0], qs[2 * j][c][1] - qs[2 * j + 1][c][1]]))))), 1e-10);
+    if (g === 2) {
+      const P = basicPeriods(al), per = (cyc, w) => {
+        const p = thetaPoly(al, w, P);
+        return p.reduce((acc, c, k) => [acc[0] + c[0] * P[cyc][k][0] - c[1] * P[cyc][k][1], acc[1] + c[0] * P[cyc][k][1] + c[1] * P[cyc][k][0]], [0, 0]);
+      };
+      let best = Infinity;
+      for (const s1 of [1, -1]) for (const s2 of [1, -1]) {
+        const d = [[1, 0], [0, 1]].map((w, c) => {
+          const b1 = per(0, w), b2 = per(2, w);
+          return ab([2 * qs[2][c][0] - s1 * b1[0] - s2 * b2[0], 2 * qs[2][c][1] - s1 * b1[1] - s2 * b2[1]]);
+        });
+        best = Math.min(best, Math.max(...d));
+      }
+      check('g=2: 2 q(alpha_2) = period of B_1 ± B_2 (so q(B) is a half-period)', best, 1e-9);
+    }
   }
 }
 

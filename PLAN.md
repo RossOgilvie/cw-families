@@ -87,6 +87,14 @@ Each milestone ends in a check that can be verified.
    The state is in the link (`y`, `j`), and there are three presets (the Clifford torus, a homogeneous torus of ratio 2, and a branch point as one Sym point).
    The panels Mean curvature and Root-preserving flow are removed (with `src/sym-pad.js`); `src/cmc/rootflow.js` stays, as its tests still run.
 
+2. Milestone 2, first part done (November 2026): `src/cmc/resonance.js`.
+   q = (q^1, q^2) = (log μ_1, log μ_i) is the primitive of the real-normalized Θ_1, Θ_i of `periods.js`, based at the branch point α_1 (q∘σ = −q), in closed form in genus 0 (q_w = (w ν/λ + conj(w) ν)/κ_0, in the code's normalization ν^2 = −λ, κ_0 = 2).
+   It is computed by Gauss–Legendre quadrature on segments, with ν continued and the square-root singularities at branch-point ends removed.
+   Resonance pairs: Newton in (λ_P, λ_Q) with q carried along incrementally; `genus0Resonance` (closed form: ν_P − ν_Q = 2πi k, ν_P ν_Q = k/conj(k), over S^1 if and only if |k| ≤ 1/π); `classifyPair` (off, on, node, with a signed distance to arrival).
+   In this normalization the torus lattice Λ is in the z-plane and γ = 2πi (k_1, k_2) with k ∈ Λ^*; the sketch's Γ is 2πi Λ^*, so its scale is that of Λ.
+   Tests: in genus 0, q equals the eigenvalues of X(λ) on the eigenline used by `gensym.js` (both sheets), the closed forms, Newton, the threshold and classification; in genus 1 and 2, Re q = 0 and q(α) = q(1/conj α) at branch points, and 2q(α_2) is a period of B_1 ± B_2.
+   Still to do: continuing marked pairs along a deformation of the curve (with the edges, milestones 3 and 4).
+
 ## TODO
 
 1. Rewrite the README for cw-families: it still describes cmc-immersion (title, controls, layout, the removed panels).
