@@ -477,13 +477,16 @@ function candidatePath(R) {
   return { points: pts, critical: [] };
 }
 const PAIR_NAMES = { a1: 'α₁', a2: 'α₂', node: 'the node' };
+// candidates 2 and 3 share the genus 2 spectral curve: 2 takes the two pairs of branch points as Sym
+// points, 3 the branch points from genus 1 and the arriving node (cw_candidates.md)
+const CHOICE_NAMES = { 'a1,a2': 'Candidate 2', 'a1,node': 'Candidate 3', 'a2,node': 'Other choice' };
 function candidate2Note(R) {
   const order = `Class order ${R.frame.order}.`;
   const c = (x) => `${fixed(x[0], 4)} ${x[1] < 0 ? '−' : '+'} ${fixed(Math.abs(x[1]), 4)}i`;
   const one = R.c1 ? `Candidate 1: the pair of class ${R.c1.cls} arrives at α = −${fixed(R.c1.r, 6)}; W = ${fixed(R.c1.W / PI ** 2, 4)} π².` : 'No candidate 1.';
   if (!R.event) return `${order}\n${one}\nGenus 2: no arrival (${R.end.why}).`;
-  const lines = R.choices.map((ch) => `  ${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')}: external τ = ${c(ch.tauExt)}, closing ${ch.defects.closing.toExponential(0)}`);
-  return `${order}\n${one}\nCandidate 2: the remaining pair arrives at s = ${fixed(R.event.s, 4)}; W = ${fixed(R.choices[0].W, 4)} = ${fixed(R.choices[0].W / PI ** 2, 4)} π² (doubled lattice), for each choice of Sym points:\n${lines.join('\n')}\nComputed in ${R.ms.toFixed(0)} ms.`;
+  const lines = R.choices.map((ch) => `  ${CHOICE_NAMES[ch.pair.join()]} (${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')}): external τ = ${c(ch.tauExt)}, closing ${ch.defects.closing.toExponential(0)}`);
+  return `${order}\n${one}\nGenus 2: the remaining pair arrives at s = ${fixed(R.event.s, 4)}; W = ${fixed(R.choices[0].W, 4)} = ${fixed(R.choices[0].W / PI ** 2, 4)} π² (doubled lattice) for every choice of Sym points:\n${lines.join('\n')}\nComputed in ${R.ms.toFixed(0)} ms.`;
 }
 /** The paths of the branch points along the genus 2 edge, for the λ-plane. */
 function candidate2Path(R) {
@@ -545,7 +548,7 @@ function requestCandidate(tau) {
         if (!R.event) return;
         cand.c2 = R;
         const keep = +$('cand2Pick').value || 0;
-        $('cand2Pick').innerHTML = R.choices.map((ch, i) => `<option value="${i}">Sym points ${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')}</option>`).join('');
+        $('cand2Pick').innerHTML = R.choices.map((ch, i) => `<option value="${i}">${CHOICE_NAMES[ch.pair.join()]} (${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')})</option>`).join('');
         $('cand2Pick').value = String(Math.min(keep, R.choices.length - 1));
         if (anim) stopAnim();
         showCandidate2(+$('cand2Pick').value);

@@ -88,6 +88,11 @@ Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in
    A σ-node arriving over S^1 is a codimension 1 event on an edge (one parameter on S^1 against q ∈ ½Γ in i\bbR^2).
    The branch pair from the opened node is a trivial-multiplier ρ-pair along the whole edge, provided its class matches.
    So the candidates are isolated points on the edges.
+11. F11: The candidates lie in S^4, not in a 3-sphere.
+   For candidate 1 at internal τ = 0.2 + 1.3i and 0.45 + 0.95i, and for all three choices of Sym points on the genus 2 curve at 0.45 + 0.95i, the closed torus lies on no round 3-sphere and in no hyperplane: the smallest singular value of [|f|^2, f, 1] over the torus is 0.15–0.33 of the largest (for the Clifford torus it is 1e-11).
+   This agrees with Bohle 2010: our tori have a harmonic left normal (im Q° constant, Lemma 6.3), and a Case II torus in a 3-sphere is CMC there (Corollary 6.12), whose constant Darboux transforms are σ-nodes over S^1 (Lemma 4.7 c); a branch point as a Sym point rules this out.
+   So the two-coloured look of the drawings (one half seen from outside, one from inside) comes from the projection: a generic projection of a surface in R^4 to R^3 is an immersion with self-intersection curves ending in isolated cross-caps, and across such a curve one sees the other side.
+   Checked: numerically (the fit) and by the argument above.
 
 ## Open questions
 
@@ -102,4 +107,10 @@ Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in
    Is τ in this sketch the class of Γ, or the class of the final (doubled) torus?
    Answer (Ross): these are the internal τ (of Γ) and the external τ (of the torus).
    There is no good way yet to fix the external τ ab initio; we fix the internal τ, and revisit this once we know better how the candidates behave.
-3. Do the three candidates for a rectangular τ lie in \bbR^3, as in the known cases?
+3. Candidates 2 and 3, and the open ends.
+   Answer (Ross): candidates 2 and 3 have the same (genus 2) spectral curve; candidate 2 takes the two pairs of branch points as Sym points, candidate 3 the pair of branch points from genus 1 and the resonance pair arriving on S^1.
+   It is expected that for some internal τ the edge reaches an open end (a branch point comes to α = 0) before the next arrival; the limit can be taken (genus 2 paper), and there the corresponding "immersion" is a branched cover of the sphere.
+4. The R^3 hypothesis (F11).
+   The candidates with a branch point as a Sym point lie in S^4, not in a 3-sphere, so they are not tori in R^3.
+   How does this fit the hypothesis that one of the three candidates minimizes W among tori in R^3 of the conformal class?
+5. Do the three candidates for a rectangular τ lie in \bbR^3, as in the known cases?
