@@ -486,7 +486,7 @@ function refreshAlphaValues() {
 // Candidate 1 for the internal tau: computed in its own worker; on success the spectral data, the two
 // generalized Sym points and one cell of the closing lattice are loaded. Editing the spectral data
 // afterwards leaves the candidate (the drawing goes back to the rectangular domain).
-const cand = { worker: null, id: 0, last: null, tau: null, busy: false, pending: null, path: null, which: 1, tree: null, index: -1, sampleNote: '' };
+const cand = { worker: null, id: 0, last: null, lastR: null, tau: null, busy: false, pending: null, path: null, which: 1, tree: null, index: -1, sampleNote: '' };
 function leaveCandidate() {
   if (!state.cell) return;
   state.cell = null;
@@ -515,10 +515,10 @@ function candidate2Note(R) {
   if (!R.event && R.openEnd) {
     const o = R.openEnd;
     const ext = R.choices[0];
-    const lines = R.choices.map((ch) => `  t = ${ch.t.toExponential(0)}: W/8π = ${fixed(ch.W / (8 * PI), 4)}` + (ch.shape ? `, distance from a round sphere ${fixed(ch.shape.defect, 3)}, area in S⁴ ${fixed(ch.shape.area, 3)} × 4π` : ' (shape diagnostics after the drag)'));
+    const lines = R.choices.map((ch) => `  t = ${ch.t.toExponential(0)}: W/8π = ${fixed(ch.W / (8 * PI), 4)}` + (ch.shape ? `, distance from a round sphere ${fixed(ch.shape.defect, 3)}, area in S⁴ ${fixed(ch.shape.area, 3)} × 4π` : ''));
     return `${order}\n${one}\nGenus 2: no arrival before the open end (both branch points go to 0, at the scale t).\n` +
       `Followed to t = ${o.t.toExponential(0)}: open-end τ of the rescaled roots = ${c(o.tau)}, the internal τ to ${o.tauError.toExponential(1)}.\n` +
-      `Candidate 2 (external τ = ${c(ext.tauExt)}${ext.doubled ? ', double cover' : ''}), read in S⁴ after a Möbius normalization:\n${lines.join('\n')}\n` +
+      `Candidate 2 (external τ = ${c(ext.tauExt)}${ext.doubled ? ', double cover' : ''})${R.choices.some((ch) => ch.shape) ? ', read in S⁴ after a Möbius normalization' : ''}:\n${lines.join('\n')}\n` +
       `The limit is the round sphere covered twice (area 2 × 4π), branched at the four half-periods: the quotient of the torus by z ↦ −z. Computed in ${R.ms.toFixed(0)} ms.`;
   }
   if (!R.event) return `${order}\n${one}\nGenus 2: no arrival (${R.end.why}).`;
@@ -624,6 +624,53 @@ $('cand1Btn').addEventListener('click', () => {
   requestCandidate([re, im]);
 });
 /**
+ * Changes between the previous result A and the new one B (computed for a nearby tau, |dtau| < 0.05, as
+ * when tau or a branch point is dragged): a wall of F_6 crossed (the order of the classes changed: the
+ * labels can change while the candidates continue), a change of the kind of tree (which nodes: candidates
+ * 2 and 3, an open end, a double arrival; candidates 2 and 3 merge continuously into the open end as their
+ * arrival goes to t = 0), and jumps: W at a node changed by more than 0.5% + 3 dtau / Im tau
+ * (three times the change of W at the opening, 2 pi^2 / Im tau, for a smooth change).
+ * Returns a sentence, or null.
+ */
+function treeJump(A, B) {
+  if (!A || !B || !A.tree || !B.tree || A.which !== B.which) return null;
+  const dTau = Math.hypot(A.tau[0] - B.tau[0], A.tau[1] - B.tau[1]);
+  if (!(dTau > 0) || dTau > 0.05) return null;
+  const kind = (R) => R.tree.nodes.map((n) => n.label).join(', ');
+  const fmtT = (t) => `${fixed(t[0], 4)} + ${fixed(t[1], 4)}i`;
+  const out = [];
+  if (A.frame.order !== B.frame.order) out.push(`crossed a wall of F₆: the order of the classes changed from ${A.frame.order} to ${B.frame.order}`);
+  // e.g. candidates 2 and 3 merging into the open end as the arrival goes to t = 0 (continuous)
+  if (kind(A) !== kind(B)) out.push(`the tree changed from (${kind(A)}) to (${kind(B)})`);
+  else {
+    const W = (R) => R.tree.nodes.map((n) => R.tree.samples[n.index].W);
+    const wa = W(A), wb = W(B), worst = Math.max(...wa.map((w, i) => Math.abs(w - wb[i]) / w));
+    // smooth changes are of order dtau / Im tau (W at the opening is 2 pi^2 / Im tau on the closing lattice)
+    if (worst > 0.005 + (3 * dTau) / Math.min(A.tau[1], B.tau[1])) out.push(`Jump: W at a node changed by ${fixed(100 * worst, 1)}%`);
+  }
+  if (!out.length) return null;
+  const txt = out.join('; ');
+  return `${txt[0].toUpperCase()}${txt.slice(1)} (τ from ${fmtT(A.tau)} to ${fmtT(B.tau)}).`;
+}
+$('shapeBtn').addEventListener('click', () => {
+  const R = cand.lastR;
+  if (!R || !R.openEnd || !R.choices) return;
+  $('shapeBtn').disabled = true;
+  $('shapeBtn').textContent = 'Checking the limit shape…';
+  const w = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  w.onmessage = (e) => {
+    w.terminate();
+    $('shapeBtn').textContent = 'Check the limit shape';
+    if (e.data.error || cand.lastR !== R) { $('shapeBtn').disabled = false; return; }
+    e.data.result.shapes.forEach((sh, i) => { R.choices[i].shape = sh; });
+    $('shapeBtn').hidden = true;
+    cand.last = candidate2Note(R);
+    $('candNote').textContent = cand.last;
+  };
+  w.postMessage({ id: 1, kind: 'shapes', params: { choices: R.choices.map((ch) => ({ alphas: ch.alphas, syms: ch.syms.map((p) => ({ lam: p.lam })), lattice: ch.lattice })) } });
+});
+
+/**
  * Compute the candidates (and the tree) for internal tau (the latest request wins). opts: place (put the
  * dot on the genus 2 edge at this scale t), show (false: update the tree and notes but leave the drawn
  * data alone, while a branch point is dragged), fast (skip the open-end shape diagnostics).
@@ -644,8 +691,12 @@ function requestCandidate(tau, opts = {}) {
       const o = cand.inflight || {};
       if (cand.pending) requestCandidate(cand.pending.tau, cand.pending.opts);
       if (error) { $('candNote').textContent = error; return; }
-      cand.last = R.which === 2 ? candidate2Note(R) : candidateNote(R);
+      const jump = treeJump(cand.lastR, R, o);
+      cand.lastR = R;
+      cand.last = (jump ? `${jump}\n` : '') + (R.which === 2 ? candidate2Note(R) : candidateNote(R));
       $('candNote').textContent = cand.last;
+      $('shapeBtn').hidden = !(R.openEnd && R.choices && R.choices.length && !o.fast);
+      $('shapeBtn').disabled = false;
       candPad.set({ tau: R.tau, blocked: !R.event && !R.openEnd });
       const prev = cand.tree, prevSm = prev && prev.samples[cand.index];
       cand.tree = R.tree || null;

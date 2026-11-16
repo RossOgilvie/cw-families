@@ -155,8 +155,25 @@ function refineArrival(hi, lo, gHi, gLo, s, evalAt) {
 const gOf = (cls) => (cls.kind === 'off' ? -cls.dist * cls.dist : cls.dist * cls.dist);
 
 /** Solve the pair named name at r, continuing from start = { P, Q }. */
+let g1Cache = null;
+/** The curve data at r shared by the pairs (the q map and the scale), cached for the last r. */
+function genus1At(r) {
+  if (!g1Cache || g1Cache.r !== r) g1Cache = { r, Q: new QMap([[-r, 0]]), t: genus1Scale(r) };
+  return g1Cache;
+}
+/**
+ * A starting guess at x for a pair continued along an edge: linear extrapolation of lam and nu in the edge
+ * parameter u (log r or log t) from the last two solutions h = [{ u, P, Q }, { u, P, Q }] (or the last one).
+ */
+function extrapolate(h, u) {
+  if (h.length < 2) return { P: h[h.length - 1].P, Q: h[h.length - 1].Q };
+  const [a, b] = h.slice(-2), s = (u - b.u) / (b.u - a.u);
+  const ex = (p, q) => ({ lam: [q.lam[0] + s * (q.lam[0] - p.lam[0]), q.lam[1] + s * (q.lam[1] - p.lam[1])], nu: [q.nu[0] + s * (q.nu[0] - p.nu[0]), q.nu[1] + s * (q.nu[1] - p.nu[1])] });
+  return { P: ex(a.P, b.P), Q: ex(a.Q, b.Q) };
+}
+
 function pairAt(tau, name, r, start) {
-  const al = [[-r, 0]], Q = new QMap(al), t = genus1Scale(r);
+  const { Q, t } = genus1At(r);
   const z = markedVectors(tau)[name], k = kOf(t, z);
   const gam = [[0, 2 * Math.PI * k[0]], [0, 2 * Math.PI * k[1]]];
   const R = Q.resonance(nearestSheet(Q, start.P), nearestSheet(Q, start.Q), gam, { lattice: [kOf(t, [1, 0]), kOf(t, tau)] });
@@ -171,7 +188,7 @@ function pairAt(tau, name, r, start) {
  * Options: rMin (stop), factor (step in r), maxEvents.
  * Returns { samples, events: [{ name, r, t, W, P, Q, lamNode }], end: { r, why } }.
  */
-export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, maxEvents = 1 } = {}) {
+export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.8, maxEvents = 1, predict = true } = {}) {
   const t0 = 1 / Math.PI, names = ['tau', 'third'];
   const mk = markedVectors(tau);
   const lift = (p) => ({ lam: p.lam, nu: cmul(p.nu, [p.lam[0] + 1, p.lam[1]]) });
@@ -182,6 +199,7 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, 
   const Wint = (rr, t) => Math.abs(willmoreFrame(leafData([[-rr, 0]]), ...torusBasis(t, tau)));
   let first = true, jumped = false;
   let step = 1 - factor; // relative step in r, halved on failure and grown back after successes
+  const hist = Object.fromEntries(names.map((n) => [n, []])); // the last solutions, for the predictor
   while (r > rMin) {
     let next, res, ok = false;
     for (let tries = 0; tries < 8 && !ok; tries++) {
@@ -189,7 +207,7 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, 
       res = {};
       ok = true;
       for (const n of names) {
-        res[n] = pairAt(tau, n, next, cur[n]);
+        res[n] = pairAt(tau, n, next, predict && hist[n].length ? extrapolate(hist[n], Math.log(next)) : cur[n]);
         // reject a step on which a point jumps (Newton found another branch)
         const jump = (a, b) => dist(a.lam, b.lam) > 0.15 * Math.max(0.05, Math.hypot(...b.lam));
         if (!res[n].ok || (!first && (jump(res[n].P, cur[n].P) || jump(res[n].Q, cur[n].Q)))) ok = false;
@@ -234,7 +252,11 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, 
       }
     }
     if (jumped) break;
-    for (const n of names) cur[n] = { P: res[n].P, Q: res[n].Q, cls: res[n].cls };
+    for (const n of names) {
+      cur[n] = { P: res[n].P, Q: res[n].Q, cls: res[n].cls };
+      hist[n].push({ u: Math.log(next), P: res[n].P, Q: res[n].Q });
+      if (hist[n].length > 2) hist[n].shift();
+    }
     r = next;
     const t = res.tau.t;
     samples.push({ r, t, W: Wint(r, t), pairs: Object.fromEntries(names.map((n) => [n, res[n].cls])),
@@ -547,7 +569,8 @@ export function openEndInfo(samples, tau1) {
  * pairs of { alpha, node a, node b } on the genus 1 curve, with double: true and edge null.
  * Returns { tau, c1, edge, event, alphas, choices } (event null if none was found). If the edge reaches the
  * open end instead, also openEnd, and the choices are candidate 2 at the scales opts.drawT (default 0.03,
- * 0.01, 0.003, 0.001), each with t, alphas and shape (roundnessS4 on a shapeGrid^2 grid of one cell).
+ * 0.01, 0.003, 0.001; with opts.fast only 0.03), each with t and alphas; with opts.shapes also shape
+ * (openEndShapes, which is otherwise left to be requested separately).
  */
 export function candidate2(tau, opts = {}) {
   const c1 = candidate1(tau, opts.genus1 || {});
@@ -576,17 +599,23 @@ export function candidate2(tau, opts = {}) {
       const sm = edge.samples.reduce((b, x) => (Math.abs(Math.log(x.t / tDraw)) < Math.abs(Math.log(b.t / tDraw)) ? x : b));
       if (Math.abs(Math.log(sm.t / tDraw)) > 0.5 || choices.some((ch) => ch.t === sm.t)) continue;
       const al = sm.alphas, k = ellVector(al).map(([x, y]) => [x, -y]);
-      const syms = [{ lam: al[0], nu: [0, 0] }, { lam: al[1], nu: [0, 0] }];
-      const ch = { pair: ['a1', 'a2'], t: sm.t, alphas: al, syms, ...candidate(al, dualBasis(k[0], k[1]), syms) };
-      // the shape, Möbius invariantly, on a coarse uniform grid of one cell (first and last rows coincide)
-      if (!opts.fast) {
-        const n = opts.shapeGrid || 36, [l1, l2] = ch.lattice.map((e) => Math.hypot(...e));
-        const S = computeGenSurface({ alphas: al, lams: [al[0], al[1]], cell: ch.lattice, projection: 'drop4',
-          sCoords: Array.from({ length: n }, (_, i) => (i * l1) / (n - 1)), tCoords: Array.from({ length: n }, (_, i) => (i * l2) / (n - 1)) });
-        ch.shape = roundnessS4(S.pos4, n, n);
+      const syms = [{ lam: al[0], nu: [0, 0] }, { lam: al[1], nu: [0, 0] }], basis = dualBasis(k[0], k[1]);
+      let ch;
+      if (!choices.length) ch = { pair: ['a1', 'a2'], t: sm.t, alphas: al, syms, ...candidate(al, basis, syms) };
+      else {
+        // the characters of the branch points are constant along the edge: the closing lattice has the
+        // parity of the first scale's, and W is the residue formula there (no frame integration, which
+        // costs ~1/t near the open end); the closing defects are not computed (null)
+        const c0 = choices[0], par = c0.chars.map(([u, v]) => (u === v ? 0 : 1));
+        const lattice = paritySublattice(basis, par), [e1, e2] = lattice, den = e1[0] ** 2 + e1[1] ** 2;
+        ch = { pair: ['a1', 'a2'], t: sm.t, alphas: al, syms, lattice, doubled: c0.doubled, chars: c0.chars,
+          W: Math.abs(willmoreFrame(leafData(al), e1, e2)),
+          tauExt: reduceTau([(e2[0] * e1[0] + e2[1] * e1[1]) / den, (e2[1] * e1[0] - e2[0] * e1[1]) / den]), defects: null };
       }
       choices.push(ch);
     }
+    // the shape diagnostics are expensive near the open end (seconds): only on request
+    if (opts.shapes) openEndShapes(choices, opts);
     return { tau, frame: c1.frame, c1, edge, event: null, openEnd: edge.openEnd, alphas: choices[0].alphas, choices };
   }
   const al = event.alphas;
@@ -728,4 +757,21 @@ export function locateOnTree(alphas, tau) {
   const t2 = cdivc([w[0] * p1 - p2, w[1] * p1], [q2 - w[0] * q1, -w[1] * q1]);
   const pr = cmul(alphas[0], alphas[1]);
   return { tau: t2[1] < 0 ? [-t2[0], -t2[1]] : t2, tau1, t: Math.sqrt(Math.hypot(...pr)) };
+}
+
+/**
+ * The open-end shape diagnostics (F12), in place: for each choice { alphas, syms, lattice } (candidate 2
+ * at a scale t), shape = roundnessS4 of the surface on a shapeGrid^2 uniform grid of one cell (first and
+ * last rows coincide): the distance from a round 2-sphere and the S^4 area / 4 pi after a Möbius
+ * normalization. Seconds near t = 1e-3 (the step cap is ~t). Returns the choices.
+ */
+export function openEndShapes(choices, { shapeGrid = 36 } = {}) {
+  const n = shapeGrid;
+  for (const ch of choices) {
+    const [l1, l2] = ch.lattice.map((e) => Math.hypot(...e));
+    const S = computeGenSurface({ alphas: ch.alphas, lams: ch.syms.map((p) => p.lam), cell: ch.lattice, projection: 'drop4',
+      sCoords: Array.from({ length: n }, (_, i) => (i * l1) / (n - 1)), tCoords: Array.from({ length: n }, (_, i) => (i * l2) / (n - 1)) });
+    ch.shape = roundnessS4(S.pos4, n, n);
+  }
+  return choices;
 }

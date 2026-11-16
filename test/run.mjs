@@ -621,7 +621,7 @@ console.log('the tree: genus 0 edge, opening at lam = -1, genus 1 edge, candidat
   // the open end: at 0.2 + 1.3i the genus 2 edge reaches it without an arrival; the open-end tau of the
   // rescaled roots tends to the internal tau (error O(t)), and W_int to 4 pi
   {
-    const D = candidate2([0.2, 1.3]);
+    const D = candidate2([0.2, 1.3], { shapes: true });
     const o = D.openEnd;
     check(`open end at 0.2 + 1.3i: reached (t = ${o && o.t.toExponential(0)}), open-end tau within O(t) of the internal tau`, o ? Math.max(0, o.tauError - o.t) : 1, 1e-9);
     check(`open end: W_int / 4 pi = ${o && o.WRatio.toFixed(6)} -> 1 (error O(t))`, o ? Math.max(0, Math.abs(o.WRatio - 1) - o.t) : 1, 1e-9);

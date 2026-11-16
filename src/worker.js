@@ -7,7 +7,7 @@
 
 import { computeSurface, closingInfo } from './cmc/cmc.js';
 import { computeGenSurface } from './cmc/gensym.js';
-import { candidate1, candidate2, treeOf } from './cmc/tree.js';
+import { candidate1, candidate2, treeOf, openEndShapes } from './cmc/tree.js';
 import { WhithamCurve } from './cmc/whitham.js';
 
 self.onmessage = (e) => {
@@ -62,6 +62,17 @@ self.onmessage = (e) => {
       }
       out.ms = performance.now() - t0;
       self.postMessage({ id, result: out });
+    } catch (err) {
+      self.postMessage({ id, error: String(err && err.message ? err.message : err) });
+    }
+    return;
+  }
+  if (kind === 'shapes') {
+    // the open-end shape diagnostics, on request (openEndShapes)
+    try {
+      const t0 = performance.now();
+      const ch = openEndShapes(params.choices);
+      self.postMessage({ id, result: { shapes: ch.map((c) => c.shape), ms: performance.now() - t0 } });
     } catch (err) {
       self.postMessage({ id, error: String(err && err.message ? err.message : err) });
     }
