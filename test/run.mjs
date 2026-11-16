@@ -473,6 +473,16 @@ console.log('generalized Sym formula f = Q(u1 F(lam1)) Q(u2 F(lam2))^{-1} (cw_ca
     const v = 4 * 5 + 4;
     check('computeGenSurface vertex (1, 1) = direct integration (Float32)', Math.max(...[0, 1, 2, 3].map((e) => Math.abs(S.pos4[4 * v + e] - f[e]))), 1e-5);
   }
+  // 5. automatic projection: the Clifford torus is recognized as lying on a 3-sphere (and its stereographic image
+  //    is bounded); a branch point as a Sym point gives a surface on no 3-sphere (principal axes)
+  {
+    const L = Math.PI * Math.SQRT2;
+    const C = computeGenSurface({ alphas: [], lams: [[0, 1], [0, -1]], signs: [1, 1], width: L, height: L, nx: 40, ny: 40, hmax: 0.01 });
+    const ext = Math.max(C.bbox[3] - C.bbox[0], C.bbox[4] - C.bbox[1], C.bbox[5] - C.bbox[2]);
+    check(`Clifford torus: projection = ${C.projection}, stereographic extent ${ext.toFixed(2)} bounded`, C.projection === 'sphere' && ext < 20 ? 0 : 1, 0.5);
+    const B = computeGenSurface({ alphas: [[0.5, 0]], lams: [[0.5, 0], [0, 1]], signs: [1, 1], width: 4, height: 4, nx: 30, ny: 30, hmax: 0.01 });
+    check(`branch point as a Sym point: projection = ${B.projection} (on no 3-sphere)`, B.projection === 'pca' ? 0 : 1, 0.5);
+  }
 }
 
 // ------------------------------------------------------------------ timing

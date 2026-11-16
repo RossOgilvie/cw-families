@@ -5,8 +5,6 @@ import { SpectralWidget, MAX_GENUS } from './spectral-widget.js';
 import { shapeFlows, kappa0, hopfArg } from './cmc/cmc.js';
 import { WhithamCurve } from './cmc/whitham.js';
 import { commonRootsOnCircle } from './cmc/periods.js';
-import { RootFlow, symData } from './cmc/rootflow.js';
-import { SymPad, denominator } from './sym-pad.js';
 import {
   leafData, willmoreFrame, tauOf, rationalPlanes, latticeFrame, reduceFrame, classOrder, TauFlow, PlaneFlow,
   nearbyPeriods, lllPeriods, predictMoves, saturate, periodsOf, frameVector,
@@ -73,7 +71,7 @@ const VIEW_DEFAULTS = {
   gridStep: 0.25, lineW: 0.6, hmax: 0.05, adaptive: false, res: 240,
   // generalized Sym points (cw_candidates.md, F7): the immersion into R^4 from two points of the
   // spectral curve, projected to R^3
-  gen: { on: false, lams: [[0, 1], [0, -1]], signs: [1, 1], proj: 'drop4' },
+  gen: { on: false, lams: [[0, 1], [0, -1]], signs: [1, 1], proj: 'auto' },
 };
 // Widths of the rotational examples are exact closing periods of the parallels, pi / sqrt(det X(lam0)).
 // Bubbletons: a double branch point at the k-th resonance point of the cylinder, where its monodromy is ±I.
@@ -94,9 +92,9 @@ const PRESETS = [
   // real and 2 w2 - w1 = 4.47988 i; E(w1) turns by 2/3 about an axis, E(2 w2 - w1) = id, so the torus
   // lattice is <3 w1, w1 + w2>, whose fundamental domain is the brick 3 w1 x (4.47988 / 2).
   { name: 'Wente torus (three lobes)', s: { alphas: [[0.1412634686, 0.1017768953], [0.1412634686, -0.1017768953]], theta0: 0, width: 6.950948617, height: 2.239937825, gridStep: 6.950948617 / 72, res: 360 } },
-  { name: 'Clifford torus (two Sym points ±i, g = 0)', s: { alphas: [], theta0: 0, width: PI * Math.SQRT2, height: PI * Math.SQRT2, gridStep: PI * Math.SQRT2 / 24, gen: { on: true, lams: [[0, 1], [0, -1]], signs: [1, 1], proj: 'drop4' } } },
-  { name: 'Homogeneous torus, ratio 2 (two Sym points, g = 0)', s: { alphas: [], theta0: 0, width: PI / Math.cos(Math.atan(0.5)), height: PI / Math.sin(Math.atan(0.5)), gridStep: PI / Math.cos(Math.atan(0.5)) / 16, gen: { on: true, lams: [[0.6, 0.8], [0.6, -0.8]], signs: [1, 1], proj: 'drop4' } } },
-  { name: 'Branch point as a Sym point (g = 1, in R⁴)', s: { alphas: [polar(0.5, 0)], theta0: 0, width: 6, height: 6, gen: { on: true, lams: [polar(0.5, 0), [0, 1]], signs: [1, 1], proj: 'drop4' } } },
+  { name: 'Clifford torus (two Sym points ±i, g = 0)', s: { alphas: [], theta0: 0, width: PI * Math.SQRT2, height: PI * Math.SQRT2, gridStep: PI * Math.SQRT2 / 24, gen: { on: true, lams: [[0, 1], [0, -1]], signs: [1, 1], proj: 'auto' } } },
+  { name: 'Homogeneous torus, ratio 2 (two Sym points, g = 0)', s: { alphas: [], theta0: 0, width: PI / Math.cos(Math.atan(0.5)), height: PI / Math.sin(Math.atan(0.5)), gridStep: PI / Math.cos(Math.atan(0.5)) / 16, gen: { on: true, lams: [[0.6, 0.8], [0.6, -0.8]], signs: [1, 1], proj: 'auto' } } },
+  { name: 'Branch point as a Sym point (g = 1, in R⁴)', s: { alphas: [polar(0.5, 0)], theta0: 0, width: 6, height: 6, gen: { on: true, lams: [polar(0.5, 0), [0, 1]], signs: [1, 1], proj: 'auto' } } },
   { name: 'Threefold (g = 3)', s: { alphas: [polar(0.4, 0), polar(0.4, 2 * PI / 3), polar(0.4, -2 * PI / 3)], theta0: 0.3, tau: [0], width: 6, height: 6 } },
   { name: 'Genus 4', s: { alphas: [polar(0.54, 0.38), polar(0.4, PI / 2), polar(0.58, -2.6), polar(0.63, -1.25)], theta0: 1, tau: [0.8, -0.5], width: 6, height: 6 } },
 ];
@@ -124,7 +122,7 @@ function linkURL() {
   p.set('a', state.alphas.map(([re, im]) => `${fmt(re, 10)},${fmt(im, 10)}`).join(';'));
   p.set('l', fmt(state.theta0, 10));
   if (state.tau.length) p.set('t', state.tau.map((x) => fmt(x)).join(','));
-  if (state.gen.on && state.gen.proj !== 'drop4') p.set('j', state.gen.proj);
+  if (state.gen.on && state.gen.proj !== 'auto') p.set('j', state.gen.proj);
   if (state.gen.on) p.set('y', state.gen.lams.map(([re, im], i) => `${fmt(re, 10)},${fmt(im, 10)},${state.gen.signs[i]}`).join(';'));
   p.set('c', state.z0.map((x) => fmt(x)).join(','));
   p.set('d', `${fmt(state.width, 8)},${fmt(state.height, 8)}`);
@@ -132,8 +130,6 @@ function linkURL() {
   if (state.colour !== 'side') p.set('m', state.colour);
   if (state.transp) p.set('o', fmt(state.transp, 2));
   p.set('g', fmt(state.gridStep));
-  if ($('autoH').checked) p.set('H', 'auto');
-  else if (state.H !== 0.5) p.set('H', fmt(state.H));
   if (state.adaptive) p.set('h', 'a');
   else if (state.hmax !== 0.05) p.set('h', fmt(state.hmax));
   if (state.res !== 240) p.set('r', state.res);
@@ -142,7 +138,7 @@ function linkURL() {
 }
 const clearHash = () => history.replaceState(null, '', location.pathname + location.search);
 // Links written before lam0 kept full precision (4 decimals): a lam0 that close to a common root of the
-// differentials was on it, so put it back (this keeps the root-preserving flow available).
+// differentials was on it, so put it back.
 function snapLinkLam() {
   if (!state.alphas.length) return;
   let roots = [];
@@ -163,7 +159,7 @@ function readHash() {
     if (p.has('y')) {
       const ys = p.get('y').split(';').map(nums);
       if (ys.length === 2 && ys.every((v) => v.length === 3 && v.every(Number.isFinite))) {
-        state.gen = { ...state.gen, proj: p.get('j') === 'stereo4' ? 'stereo4' : 'drop4', on: true, lams: ys.map((v) => [v[0], v[1]]), signs: ys.map((v) => (v[2] < 0 ? -1 : 1)) };
+        state.gen = { ...state.gen, proj: ['drop4', 'stereo4'].includes(p.get('j')) ? p.get('j') : 'auto', on: true, lams: ys.map((v) => [v[0], v[1]]), signs: ys.map((v) => (v[2] < 0 ? -1 : 1)) };
       }
     }
     if (p.has('c')) { const c = nums(p.get('c')); if (c.length === 2) state.z0 = c; }
@@ -173,9 +169,6 @@ function readHash() {
     if (p.has('m')) state.colour = p.get('m');
     state.transp = Math.min(1, Math.max(0, +p.get('o') || 0));
     if (p.has('g')) state.gridStep = +p.get('g') || state.gridStep;
-    if (p.has('H')) state.H = Math.max(0.01, +p.get('H') || 0.5);
-    $('autoH').checked = p.get('H') === 'auto';
-    autoH.d = null;
     state.adaptive = p.get('h') === 'a';
     if (p.has('h')) state.hmax = state.adaptive ? 0.05 : +p.get('h') || 0.05;
     if (p.has('r')) state.res = Math.min(1024, Math.max(16, +p.get('r') || 240));
@@ -300,12 +293,10 @@ function onResult(e) {
 
 /** Called after every state change. dragging: more changes are coming, so only preview. */
 function changed(dragging = false) {
-  applyAutoH();
   leafCheck();
   whithamSlider.refresh();
   requestFamily();
   updateCommonRoots();
-  rootUpdate();
   dpUpdate();
   request(false);
   clearTimeout(fullTimer);
@@ -342,12 +333,12 @@ function show(res) {
   const argQ = hopfArg(state.alphas, state.theta0);
   const size = Math.max(res.bbox[3] - res.bbox[0], res.bbox[4] - res.bbox[1], res.bbox[5] - res.bbox[2]) / (2 * state.H);
   if (state.gen.on) {
-    showStatus(`Genus ${g} · two Sym points, f in ℝ⁴ (${state.gen.proj === 'stereo4' ? 'stereographic from e₄' : 'drop x₄'}) · κ₀ = ${fmt(kappa0(state.alphas), 3)}` +
+    showStatus(`Genus ${g} · two Sym points, f in ℝ⁴ (${{ sphere: 'on a 3-sphere: stereographic', pca: 'not on a 3-sphere: principal axes', stereo4: 'stereographic from e₄', drop4: 'drop x₄' }[res.projection]}) · κ₀ = ${fmt(kappa0(state.alphas), 3)}` +
       ` · ${res.nx}×${res.ny} in ${res.stats.ms.toFixed(0)} ms · extent ${size.toPrecision(3)}`, false);
     return;
   }
   showStatus(
-    `Genus ${g} · H = ${fmt(state.H, 3)} · κ₀ = ${fmt(kappa0(state.alphas), 3)} · arg Q = ${fixed(wrapPi(argQ) / PI, 3)}π` +
+    `Genus ${g} · κ₀ = ${fmt(kappa0(state.alphas), 3)} · arg Q = ${fixed(wrapPi(argQ) / PI, 3)}π` +
     ` · ${res.nx}×${res.ny} in ${res.stats.ms.toFixed(0)} ms · extent ${size.toPrecision(3)}` +
     (res.tol ? ' · adaptive steps' : '') +
     (res.stats.detDefect > 1e-6 ? ` · det drift ${res.stats.detDefect.toExponential(1)}` : ''),
@@ -684,46 +675,6 @@ function textureStyle(range) {
   transpSlider.row.classList.toggle('hide', wire);
   return { mode: { side: 0, u: 1, K: 2 }[state.colour] ?? 0, range, wire, grid: wire || state.grid, opacity: 1 - state.transp };
 }
-function setH(v) {
-  state.H = Math.max(0.01, v);
-  viewer.setScale(1 / (2 * state.H));
-  recolour();
-  if (last) show(last);
-}
-const Hslider = slider($('Hrow'), {
-  label: '<i>H</i>', min: 0.05, max: 3, step: 0.01, digits: 2, get: () => state.H, set: setH, recompute: false,
-});
-
-// Automatic H = 1 / min |alpha_j - lam0| (for the soul conjecture: as branch points come to the Sym point
-// the surface tends to a cylinder, and with H scaled up the cylinder thins towards a space curve). The
-// homothety by 1/(2H) shrinks the surface; enlarging the domain by the same factor keeps its length.
-const autoH = { d: null }; // the distance at the last update
-function nearestBranchDistance() {
-  const [c, s] = [Math.cos(state.theta0), Math.sin(state.theta0)];
-  return state.alphas.length ? Math.min(...state.alphas.map(([re, im]) => Math.hypot(re - c, im - s))) : null;
-}
-function applyAutoH() {
-  const on = $('autoH').checked;
-  Hslider.row.querySelectorAll('input, button').forEach((el) => { el.disabled = on; });
-  $('autoHDomain').disabled = !on;
-  const d = on ? nearestBranchDistance() : null;
-  $('HNote').innerHTML = on ? (d ? `min |α − λ<sub>0</sub>| = ${fixed(d, 4)}` : 'Needs a branch point.') : '';
-  if (!d) { autoH.d = null; return; }
-  if ($('autoHDomain').checked && autoH.d) {
-    const f = autoH.d / d;
-    state.width *= f; state.height *= f; state.z0 = state.z0.map((v) => v * f);
-    for (const sl of domainSliders) sl.refresh();
-  }
-  autoH.d = d;
-  if (Math.abs(state.H - 1 / d) > 1e-12) setH(1 / d);
-  Hslider.refresh();
-}
-$('autoH').addEventListener('change', () => {
-  autoH.d = null;
-  applyAutoH();
-  changed(false);
-});
-
 // ------------------------------------------------------------------ common roots of the differentials on S^1
 
 // where every Theta_w vanishes: a Sym point there has no translational period in any direction
@@ -736,122 +687,6 @@ function updateCommonRoots() {
   widget.set({ commonRoots: roots });
 }
 let commonRoots = [];
-
-// ------------------------------------------------------------------ root-preserving flow (even genus)
-
-// Active when lam0 sits on a common root of the differentials (the data are on S^g). The pad shows the
-// Sym integrals (phi_1, phi_2); dragging sets a target that the flow chases, a little per frame.
-// Genus 2: phi on the CKKS triangle. Genus >= 4: phi for a basis of the period plane fixed at the anchor
-// (P, oriented so that phi starts out positive); the pad maps the region the flow reaches as it goes.
-const root = { flow: null, key: null, target: null, dragging: false, running: false, scale: null, P: null };
-const rootGenus = () => genus() >= 2 && genus() % 2 === 0;
-const rootKey = () => JSON.stringify([state.alphas, state.theta0]);
-const pad = new SymPad($('symPad'), (phi, dragging) => {
-  root.target = phi;
-  root.dragging = dragging;
-  if (anim) stopAnim();
-  rootChase();
-});
-
-function onCommonRoot() {
-  const [c, s] = [Math.cos(state.theta0), Math.sin(state.theta0)];
-  return commonRoots.some(([re, im]) => Math.hypot(re - c, im - s) < 1e-7);
-}
-
-/** After any change of the spectral data other than our own moves: re-anchor the pad. */
-function rootUpdate() {
-  if (root.key === rootKey()) return;
-  root.flow = null;
-  root.key = null;
-  root.target = null;
-  root.P = null;
-  let phi = null;
-  if (rootGenus() && onCommonRoot()) {
-    try {
-      const d = symData(state.alphas, state.theta0);
-      phi = d.phi;
-      if (genus() > 2) {
-        root.P = d.P.map((Pl, l) => (phi[l] < 0 ? Pl.map((v) => -v) : Pl));
-        phi = phi.map(Math.abs);
-      }
-    } catch { phi = null; }
-  }
-  const free = genus() > 2;
-  if (free && phi) pad.centre(phi);
-  pad.set({ mode: free ? 'free' : 'triangle', phi, target: null, blocked: false, trail: [], marks: [] });
-  rootNote(phi, false);
-}
-
-const WHY = {
-  edge: '', circle: ' (a branch point nears the unit circle)', zero: ' (a branch point nears 0)',
-  collision: ' (two branch points meet)', fold: ' (φ is not an immersion)', solver: ' (the solver can’t continue)',
-};
-
-function rootNote(phi, blocked, why = null) {
-  const el = $('rootNote');
-  if (!rootGenus()) { el.textContent = 'Even genus only, for now.'; return; }
-  if (!phi) { el.textContent = 'Move λ₀ onto a common root (◆) to enable.'; return; }
-  const ends = blocked ? `\nThe flow ends here${WHY[why] || ''}` : '';
-  if (genus() > 2) {
-    el.textContent = `φ = −i ln μ = (${fixed(phi[0] / PI, 4)}, ${fixed(phi[1] / PI, 4)}) π${ends}`;
-    return;
-  }
-  const frac = (x) => {
-    const u = x / PI, q = denominator(u, 24, 1e-7);
-    if (!Number.isFinite(q)) return null;
-    const p = Math.round(u * q);
-    return p === 0 ? '0' : q === 1 ? String(p) : `${p}/${q}`;
-  };
-  const f = phi.map(frac);
-  el.textContent = f.every(Boolean)
-    ? `φ = −i ln μ = (${f[0]}, ${f[1]}) π\nA torus`
-    : `φ = −i ln μ = (${fixed(phi[0] / PI, 3)}, ${fixed(phi[1] / PI, 3)}) π${ends}`;
-}
-
-function rootChase() {
-  if (root.running) return;
-  root.running = true;
-  const step = () => {
-    if (!root.target || !rootGenus()) { root.running = false; return; }
-    let r;
-    try {
-      if (!root.flow) {
-        root.flow = new RootFlow(state.alphas, state.theta0, root.P);
-        root.scale = symData(state.alphas, state.theta0).latticeScale;
-      }
-      r = root.flow.moveToward(root.target, { budget: 12, step: genus() > 2 ? 0.005 : 0.03 });
-    } catch (e) {
-      root.running = false;
-      $('rootNote').textContent = String(e.message || e);
-      return;
-    }
-    state.alphas = r.alphas;
-    root.key = rootKey();
-    // the period lattice changes size along the flow (it shrinks like sqrt|alpha| towards phi = 0):
-    // scale the domain with it
-    const scale = symData(state.alphas, state.theta0).latticeScale;
-    if ($('rootDomain').checked && root.scale && Number.isFinite(scale)) {
-      const f = scale / root.scale;
-      state.width *= f; state.height *= f; state.z0 = state.z0.map((v) => v * f);
-      for (const sl of domainSliders) sl.refresh();
-    }
-    root.scale = scale;
-    widget.set({ alphas: state.alphas });
-    refreshAlphaValues();
-    if (genus() > 2) {
-      pad.trail.push(r.phi);
-      if (r.blocked) pad.marks.push(r.phi);
-    }
-    pad.set({ phi: r.phi, blocked: r.blocked });
-    rootNote(r.phi, r.blocked, r.why);
-    const done = r.reached || r.blocked;
-    if (done && !root.dragging) { root.running = false; changed(false); return; }
-    if (!busy) changed(true);
-    if (done) { root.running = false; return; }
-    requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
 
 // ------------------------------------------------------------------ Whitham deformation
 
@@ -1146,7 +981,7 @@ const whithamSlider = slider($('whithamRow'), {
 $('showFamily').addEventListener('change', showFamily);
 
 // "Flow to common root": to the nearest critical point of W along the family (where the differentials
-// have a common root on the unit circle), then put lam0 on that root, which switches on the pad
+// have a common root on the unit circle), then put lam0 on that root
 function toRootState() {
   $('toRoot').disabled = genus() < 2 || !criticalS().length;
 }
@@ -1624,12 +1459,11 @@ function download(href, name) {
 // ------------------------------------------------------------------ start
 
 function refreshAll() {
-  autoH.d = null; // a preset or link brings its own domain: the automatic H doesn't rescale it
   buildAlphaList();
   buildTau();
   widget.set({ alphas: state.alphas, theta0: state.theta0, divisor: [] });
   refreshGen();
-  for (const s of [...domainSliders, phiSlider, ...appearanceSliders, Hslider]) s.refresh();
+  for (const s of [...domainSliders, phiSlider, ...appearanceSliders]) s.refresh();
   $('res').value = String(state.res);
   if (!$('res').value) { $('res').add(new Option(String(state.res), String(state.res))); $('res').value = String(state.res); }
   $('acc').value = state.adaptive ? 'adaptive' : String(state.hmax);

@@ -100,4 +100,6 @@ Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in
 2. Which conformal class is fixed?
    The torus lattice of the candidate is the index 2 sublattice of F8, whose conformal class generally differs from τ (for a square lattice, one index 2 sublattice is again square and the other two are rectangles with ratio 2).
    Is τ in this sketch the class of Γ, or the class of the final (doubled) torus?
+   Answer (Ross): these are the internal τ (of Γ) and the external τ (of the torus).
+   There is no good way yet to fix the external τ ab initio; we fix the internal τ, and revisit this once we know better how the candidates behave.
 3. Do the three candidates for a rectangular τ lie in \bbR^3, as in the known cases?

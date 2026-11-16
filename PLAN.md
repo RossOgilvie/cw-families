@@ -83,9 +83,15 @@ Each milestone ends in a check that can be verified.
    `test/run.mjs` checks conformality for arbitrary λ (to 1e-15), agreement with the S^3 Sym formula, closing and W = π^2 (t + 1/t) for three homogeneous tori (to 4e-6, the error of the finite differences), and the grid against direct integration.
    In the app, the checkbox *Two Sym points* in Spectral data switches the surface to the generalized formula.
    λ_1, λ_2 are blue squares in the λ-plane: draggable anywhere, snapping onto the branch points and their reflections (and following a branch point they sit on), with a double-click flipping the sheet.
-   Projections: drop x_4, and stereographic from e_4 (for two Sym points on S^1 the surface lies on the unit S^3).
+   Projections: automatic (the default: stereographic projection of the 3-sphere when the surface lies on one, from its point farthest from the surface, and otherwise orthogonal projection onto the three principal axes), stereographic from e_4, and dropping x_4.
    The state is in the link (`y`, `j`), and there are three presets (the Clifford torus, a homogeneous torus of ratio 2, and a branch point as one Sym point).
-   Known rough edges: a λ_j label overlaps the label of the branch point it sits on; the CMC panels (mean curvature, Whitham, root flow) stay visible in this mode.
+   The panels Mean curvature and Root-preserving flow are removed (with `src/sym-pad.js`); `src/cmc/rootflow.js` stays, as its tests still run.
+
+## TODO
+
+1. Rewrite the README for cw-families: it still describes cmc-immersion (title, controls, layout, the removed panels).
+2. The label of a λ_j overlaps the label of the branch point it sits on.
+3. The page title and subtitle ("CMC surfaces") and `about.html` still describe cmc-immersion.
 
 ## 4. Decisions taken
 

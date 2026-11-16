@@ -208,6 +208,160 @@ export const projections = {
 };
 
 /**
+ * Project points of R^4 (Float64Array, 4 per point) to R^3 (Float32Array, 3 per point).
+ * kind 'auto': if the points lie on a round 3-sphere (relative residual below 1e-6), stereographic
+ * projection of that sphere from its point farthest from the surface (the antipode of the direction
+ * of the centroid from the centre), onto the hyperplane through the centre; otherwise orthogonal
+ * projection onto the three principal axes of the point cloud. 'drop4' and 'stereo4' as in projections.
+ * Returns { pos, used } with used one of 'sphere', 'pca', 'drop4', 'stereo4'.
+ */
+export function projectPoints(P, kind = 'auto') {
+  const N = P.length / 4, pos = new Float32Array(3 * N);
+  if (kind === 'drop4' || kind === 'stereo4') {
+    const f = projections[kind];
+    for (let v = 0; v < N; v++) pos.set(f(P[4 * v], P[4 * v + 1], P[4 * v + 2], P[4 * v + 3]), 3 * v);
+    return { pos, used: kind };
+  }
+  const fin = [];
+  for (let v = 0; v < N; v++) if ([0, 1, 2, 3].every((e) => Number.isFinite(P[4 * v + e]))) fin.push(v);
+  const sph = sphereFit(P, fin);
+  if (sph && sph.res < 1e-6) {
+    const { c, R } = sph;
+    const n = farthestPole(P, fin, c, R);
+    const B = complementBasis(n);
+    for (let v = 0; v < N; v++) {
+      const y = [0, 1, 2, 3].map((e) => P[4 * v + e] - c[e]);
+      const yn = y[0] * n[0] + y[1] * n[1] + y[2] * n[2] + y[3] * n[3];
+      const k = R / (R - yn);
+      for (let a = 0; a < 3; a++) pos[3 * v + a] = k * (y[0] * B[a][0] + y[1] * B[a][1] + y[2] * B[a][2] + y[3] * B[a][3]);
+    }
+    return { pos, used: 'sphere' };
+  }
+  // principal axes
+  const m = [0, 0, 0, 0];
+  for (const v of fin) for (let e = 0; e < 4; e++) m[e] += P[4 * v + e] / fin.length;
+  const C = [0, 1, 2, 3].map(() => [0, 0, 0, 0]);
+  for (const v of fin) {
+    const y = [0, 1, 2, 3].map((e) => P[4 * v + e] - m[e]);
+    for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) C[a][b] += y[a] * y[b];
+  }
+  const { vals, vecs } = jacobi4(C);
+  const order = [0, 1, 2, 3].sort((a, b) => vals[b] - vals[a]);
+  const B = order.slice(0, 3).map((k) => vecs.map((row) => row[k]));
+  for (let v = 0; v < N; v++) {
+    const y = [0, 1, 2, 3].map((e) => P[4 * v + e] - m[e]);
+    for (let a = 0; a < 3; a++) pos[3 * v + a] = y[0] * B[a][0] + y[1] * B[a][1] + y[2] * B[a][2] + y[3] * B[a][3];
+  }
+  return { pos, used: 'pca' };
+}
+
+/**
+ * A unit direction n such that the pole c + R n of the sphere is far from the surface: among the
+ * antipode of the centroid, the coordinate directions ±e_k and the directions (±1, ±1, ±1, ±1)/2, the
+ * one maximizing the minimum distance to (a subsample of) the points.
+ */
+function farthestPole(P, idx, c, R) {
+  const cand = [];
+  const m = [0, 0, 0, 0];
+  for (const v of idx) for (let e = 0; e < 4; e++) m[e] += P[4 * v + e] - c[e];
+  const ml = Math.hypot(...m);
+  if (ml > 0) cand.push(m.map((x) => -x / ml));
+  for (let k = 0; k < 4; k++) for (const sg of [1, -1]) { const d = [0, 0, 0, 0]; d[k] = sg; cand.push(d); }
+  for (let b = 0; b < 16; b++) cand.push([0, 1, 2, 3].map((k) => ((b >> k) & 1 ? 0.5 : -0.5)));
+  const step = Math.max(1, Math.floor(idx.length / 4000));
+  let best = cand[0], bd = -1;
+  for (const d of cand) {
+    let mn = Infinity;
+    for (let q = 0; q < idx.length; q += step) {
+      const v = idx[q];
+      let s2 = 0;
+      for (let e = 0; e < 4; e++) s2 += (P[4 * v + e] - c[e] - R * d[e]) ** 2;
+      mn = Math.min(mn, s2);
+    }
+    if (mn > bd) { bd = mn; best = d; }
+  }
+  return best;
+}
+
+/** Least-squares sphere |x - c|^2 = R^2 through the points idx; res = max | |x-c|^2 - R^2 | / R^2. */
+function sphereFit(P, idx) {
+  if (idx.length < 6) return null;
+  // 2 c.x + d = |x|^2, d = R^2 - |c|^2: normal equations in (c, d)
+  const A = [0, 1, 2, 3, 4].map(() => [0, 0, 0, 0, 0, 0]);
+  for (const v of idx) {
+    const x = [P[4 * v], P[4 * v + 1], P[4 * v + 2], P[4 * v + 3]];
+    const row = [2 * x[0], 2 * x[1], 2 * x[2], 2 * x[3], 1], rhs = x[0] ** 2 + x[1] ** 2 + x[2] ** 2 + x[3] ** 2;
+    for (let a = 0; a < 5; a++) { for (let b = 0; b < 5; b++) A[a][b] += row[a] * row[b]; A[a][5] += row[a] * rhs; }
+  }
+  const sol = solve(A);
+  if (!sol) return null;
+  const c = sol.slice(0, 4), R2 = sol[4] + c[0] ** 2 + c[1] ** 2 + c[2] ** 2 + c[3] ** 2;
+  if (!(R2 > 0)) return null;
+  let res = 0;
+  for (const v of idx) {
+    const d2 = [0, 1, 2, 3].reduce((acc, e) => acc + (P[4 * v + e] - c[e]) ** 2, 0);
+    res = Math.max(res, Math.abs(d2 - R2) / R2);
+  }
+  return { c, R: Math.sqrt(R2), res };
+}
+
+/** Gaussian elimination with partial pivoting on an augmented n x (n+1) matrix. */
+function solve(M) {
+  const n = M.length, A = M.map((r) => r.slice());
+  for (let k = 0; k < n; k++) {
+    let p = k;
+    for (let i = k + 1; i < n; i++) if (Math.abs(A[i][k]) > Math.abs(A[p][k])) p = i;
+    if (Math.abs(A[p][k]) < 1e-300) return null;
+    [A[k], A[p]] = [A[p], A[k]];
+    for (let i = k + 1; i < n; i++) {
+      const f = A[i][k] / A[k][k];
+      for (let j = k; j <= n; j++) A[i][j] -= f * A[k][j];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let i = n - 1; i >= 0; i--) {
+    let t = A[i][n];
+    for (let j = i + 1; j < n; j++) t -= A[i][j] * x[j];
+    x[i] = t / A[i][i];
+  }
+  return x;
+}
+
+/** An orthonormal basis (3 vectors) of the complement of the unit vector n in R^4. */
+function complementBasis(n) {
+  const B = [];
+  for (let k = 0; k < 4 && B.length < 3; k++) {
+    let w = [0, 0, 0, 0]; w[k] = 1;
+    for (const b of [n, ...B]) {
+      const d = w[0] * b[0] + w[1] * b[1] + w[2] * b[2] + w[3] * b[3];
+      w = w.map((x, e) => x - d * b[e]);
+    }
+    const l = Math.hypot(...w);
+    if (l > 1e-6) B.push(w.map((x) => x / l));
+  }
+  return B;
+}
+
+/** Eigen-decomposition of a symmetric 4x4 matrix by Jacobi rotations; vecs[:, k] belongs to vals[k]. */
+function jacobi4(S) {
+  const A = S.map((r) => r.slice()), V = [0, 1, 2, 3].map((i) => [0, 1, 2, 3].map((j) => (i === j ? 1 : 0)));
+  for (let sweep = 0; sweep < 50; sweep++) {
+    let off = 0;
+    for (let p = 0; p < 4; p++) for (let q = p + 1; q < 4; q++) off += A[p][q] ** 2;
+    if (off < 1e-30) break;
+    for (let p = 0; p < 4; p++) for (let q = p + 1; q < 4; q++) {
+      if (Math.abs(A[p][q]) < 1e-300) continue;
+      const th = 0.5 * Math.atan2(2 * A[p][q], A[q][q] - A[p][p]);
+      const c = Math.cos(th), s = Math.sin(th);
+      for (let k = 0; k < 4; k++) { const a = A[k][p], b = A[k][q]; A[k][p] = c * a - s * b; A[k][q] = s * a + c * b; }
+      for (let k = 0; k < 4; k++) { const a = A[p][k], b = A[q][k]; A[p][k] = c * a - s * b; A[q][k] = s * a + c * b; }
+      for (let k = 0; k < 4; k++) { const a = V[k][p], b = V[k][q]; V[k][p] = c * a - s * b; V[k][q] = s * a + c * b; }
+    }
+  }
+  return { vals: [0, 1, 2, 3].map((i) => A[i][i]), vecs: V };
+}
+
+/**
  * The immersion f into R^4 on an nx x ny grid, from two points of the spectral curve.
  *
  * params:
@@ -215,10 +369,10 @@ export const projections = {
  *   lams     [[re, im], [re, im]]   the two spectral parameters (in C^*)
  *   signs    [s1, s2]               sheets: nu_j = s_j sqrt(lam_j a(lam_j))
  *   phi      grid rotation (default 0)
- *   projection   key of projections (default 'drop4')
+ *   projection   'auto' (default), 'stereo4' or 'drop4' (see projectPoints)
  *
  * Returns { nx, ny, pos4 (Float32 4N), pos, nrm (3N, normals of the projected mesh), u, st, bbox, phi,
- *   us (the eigenvectors), stats }.
+ *   us (the eigenvectors), projection (the one used), stats }.
  */
 export function computeGenSurface(params) {
   const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
@@ -228,7 +382,6 @@ export function computeGenSurface(params) {
   const g = alphas.length;
   const kap = kappa0(alphas);
   const phi = params.phi ?? 0;
-  const proj = projections[params.projection ?? 'drop4'];
 
   const Z = killingField(alphas);
   shapeFlows(g).forEach(([k, c], i) => { if (tau[i]) flowKilling(Z, kap, k, c, tau[i], 0.002); });
@@ -242,7 +395,7 @@ export function computeGenSurface(params) {
   I.project(y0);
 
   const N = nx * ny;
-  const pos4 = new Float32Array(4 * N), pos = new Float32Array(3 * N), nrm = new Float32Array(3 * N);
+  const P4 = new Float64Array(4 * N), nrm = new Float32Array(3 * N);
   const u = new Float32Array(N), st = new Float32Array(2 * N);
   const s = params.sCoords ? Array.from(params.sCoords)
     : Array.from({ length: nx }, (_, i) => -width / 2 + (nx > 1 ? (i * width) / (nx - 1) : 0));
@@ -272,14 +425,14 @@ export function computeGenSurface(params) {
     sweep(ys, t, ctr, cti, (j, yt) => {
       const v = j * nx + i;
       I.evaluate4(yt, us, F4, 0);
-      for (let e = 0; e < 4; e++) pos4[4 * v + e] = F4[e];
-      const p = proj(F4[0], F4[1], F4[2], F4[3]);
-      pos[3 * v] = p[0]; pos[3 * v + 1] = p[1]; pos[3 * v + 2] = p[2];
+      for (let e = 0; e < 4; e++) P4[4 * v + e] = F4[e];
       u[v] = Math.log((2 * Math.hypot(yt[2], yt[3])) / kap);
       st[2 * v] = s[i] + w0[0]; st[2 * v + 1] = t[j] + w0[1];
     });
   });
 
+  const { pos, used } = projectPoints(P4, params.projection ?? 'auto');
+  const pos4 = Float32Array.from(P4);
   meshNormals(pos, nx, ny, nrm);
   const bbox = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
   for (let v = 0; v < N; v++) {
@@ -289,7 +442,7 @@ export function computeGenSurface(params) {
     }
   }
   const t1 = (typeof performance !== 'undefined' ? performance : Date).now();
-  return { nx, ny, pos4, pos, nrm, u, st, bbox, phi, us, stats: { ms: t1 - t0 } };
+  return { nx, ny, pos4, pos, nrm, u, st, bbox, phi, us, projection: used, stats: { ms: t1 - t0 } };
 }
 
 /** Unit normals of a grid mesh by central differences (one-sided at the edges). */

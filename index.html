@@ -46,7 +46,6 @@
   .note { font-style: italic; font-size: 15.5px; color: var(--muted); margin: 4px 0 0; line-height: 1.35; }
   .muted { color: var(--muted); }
   .note:empty { display: none; }
-  #rootNote { white-space: pre-line; }
   .endrow { display: grid; grid-template-columns: 112px 1fr; column-gap: 10px; font-size: 16px; line-height: 1.3; margin: 3px 0; }
   .endrow .lab { text-align: left; }
   .hide { display: none !important; }
@@ -178,7 +177,7 @@
   .bprow .gly { justify-self: end; }
   sub { font-size: 0.68em; line-height: 0; }
 
-  #symPad, #tauPad { width: 100%; max-width: 290px; aspect-ratio: 1; display: block; margin: 2px auto 0; touch-action: none; }
+  #tauPad { width: 100%; max-width: 290px; aspect-ratio: 1; display: block; margin: 2px auto 0; touch-action: none; }
   #tauPad { margin-top: 10px; }
   #tauPadNote, #dpNote { white-space: pre-line; }
   #periodPad { width: 100%; max-width: 290px; aspect-ratio: 1; display: block; margin: 2px auto 0; touch-action: none; }
@@ -217,16 +216,6 @@
   <p class="sub">Immersions of the plane with constant mean curvature, built from spectral data by integrating polynomial Killing fields.</p>
 
   <section class="sec">
-    <h2 class="sech"><button class="disc" type="button" aria-expanded="false" aria-controls="bodyH"><span class="chev" data-glyph="chev"></span>Mean curvature</button></h2>
-    <div class="secbody" id="bodyH">
-      <div id="Hrow"></div>
-      <label class="cb"><input type="checkbox" class="chk" id="autoH"><span>Set <i>H</i> = 1 / min |α − λ<sub>0</sub>|</span></label>
-      <label class="cb"><input type="checkbox" class="chk" id="autoHDomain" checked><span>Enlarge the domain with it</span></label>
-      <p class="note" id="HNote"></p>
-    </div>
-  </section>
-
-  <section class="sec">
     <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="bodySpec"><span class="chev" data-glyph="chev"></span>Spectral data</button></h2>
     <div class="secbody" id="bodySpec">
       <div class="specbar">
@@ -259,7 +248,7 @@
         <div id="genBox" hidden>
           <div id="genInfo" class="muted"></div>
           <label class="lab" for="proj">ℝ<sup>4</sup> → ℝ<sup>3</sup></label>
-          <select id="proj"><option value="drop4">drop x₄</option><option value="stereo4">stereographic from e₄</option></select>
+          <select id="proj"><option value="auto">automatic</option><option value="stereo4">stereographic from e₄</option><option value="drop4">drop x₄</option></select>
         </div>
       </div>
     </div>
@@ -296,15 +285,6 @@
       <label class="cb"><input type="checkbox" class="chk" id="showFamily" checked><span>Show the family in the λ-plane</span></label>
       <label class="cb"><input type="checkbox" class="chk" id="whithamDomain" checked><span>Carry the domain along</span></label>
       <p class="note" id="whithamNote"></p>
-    </div>
-  </section>
-
-  <section class="sec">
-    <h2 class="sech"><button class="disc" type="button" aria-expanded="false" aria-controls="rootBox"><span class="chev" data-glyph="chev"></span>Root-preserving flow</button></h2>
-    <div class="secbody" id="rootBox" hidden>
-      <canvas id="symPad" aria-label="Sym integrals (φ₁, φ₂); drag to move along the flow" title="Drag to move along the flow. Genus 4 and up: the wheel zooms, shift-drag pans."></canvas>
-      <label class="cb"><input type="checkbox" class="chk" id="rootDomain" checked><span>Carry the domain along</span></label>
-      <p class="note" id="rootNote"></p>
     </div>
   </section>
 
