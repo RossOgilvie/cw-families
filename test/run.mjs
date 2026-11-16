@@ -12,7 +12,7 @@ import { RootFlow, symData } from '../src/cmc/rootflow.js';
 import { ellipticKE, nodalBoundary, f0, openEndTau } from '../src/cmc/genus2.js';
 import { PairIntegrator, leftEigenvector, nuAt, qmul, qdiv, computeGenSurface } from '../src/cmc/gensym.js';
 import { QMap, genus0Resonance, classifyPair } from '../src/cmc/resonance.js';
-import { genus0Edge, genus1Scale, candidate1, candidate2, reduceTau, torusBasis, kOf } from '../src/cmc/tree.js';
+import { genus0Edge, genus1Scale, candidate1, candidate2, genus2Edge, reduceTau, torusBasis, kOf } from '../src/cmc/tree.js';
 import { generator } from '../src/cmc/cmc.js';
 import {
   TauFlow, leafData, periodsOf, rationalPlanes, saturate, reduceFrame, classOrder, nearbyPeriods,
@@ -623,8 +623,12 @@ console.log('the tree: genus 0 edge, opening at lam = -1, genus 1 edge, candidat
   {
     const D = candidate2([0.2, 1.3]);
     const o = D.openEnd;
-    check(`open end at 0.2 + 1.3i: reached (t = ${o && o.t.toFixed(4)}), open-end tau within O(t) of the internal tau`, o ? Math.max(0, o.tauError - o.t) : 1, 1e-9);
-    check(`open end: W_int / 4 pi = ${o && o.WRatio.toFixed(4)} -> 1`, o ? Math.max(0, Math.abs(o.WRatio - 1) - 0.02) : 1, 1e-9);
+    check(`open end at 0.2 + 1.3i: reached (t = ${o && o.t.toExponential(0)}), open-end tau within O(t) of the internal tau`, o ? Math.max(0, o.tauError - o.t) : 1, 1e-9);
+    check(`open end: W_int / 4 pi = ${o && o.WRatio.toFixed(6)} -> 1 (error O(t))`, o ? Math.max(0, Math.abs(o.WRatio - 1) - o.t) : 1, 1e-9);
+    // the error is O(t): ten times smaller at ten times smaller t
+    const E5 = genus2Edge(D.c1, { tMin: 1e-4 });
+    check(`open end: the tau error scales with t (${o && o.tauError.toExponential(2)} at 1e-3, ${E5.openEnd && E5.openEnd.tauError.toExponential(2)} at 1e-4)`,
+      o && E5.openEnd ? Math.abs(o.tauError / E5.openEnd.tauError - 10) : 1, 0.1);
   }
   check('reduceTau maps 2.3 + 0.4i into F_1', (() => { const [x, y] = reduceTau([2.3, 0.4]); return Math.abs(x) <= 0.5 && x * x + y * y >= 1 - 1e-12 ? 0 : 1; })(), 0.5);
 }

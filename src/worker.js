@@ -50,10 +50,10 @@ self.onmessage = (e) => {
       const out = { tau: C.tau, frame: c1.frame, which: 2, event: null, ms: 0,
         c1: c1.event ? { r: c1.event.r, cls: c1.event.cls, W: c1.W, tauExt: c1.tauExt } : null,
         samples: C.edge ? C.edge.samples.map(({ s, alphas, W }) => ({ s, alphas, W })) : [], end: C.edge ? C.edge.end : { why: 'no candidate 1' } };
-      if (C.openEnd) out.openEnd = C.openEnd;
+      if (C.openEnd) Object.assign(out, { openEnd: C.openEnd, drawnAt: C.drawnAt });
       if (C.event || C.openEnd) {
         Object.assign(out, {
-          event: C.event ? { s: C.event.s, W: C.event.W, lamNode: C.event.lamNode, gap: C.event.gap } : null,
+          event: C.event ? { s: C.event.s, t: C.event.t, W: C.event.W, lamNode: C.event.lamNode, gap: C.event.gap } : null,
           alphas: C.alphas,
           choices: C.choices.map((ch) => ({ pair: ch.pair, syms: ch.syms, lattice: ch.lattice, doubled: ch.doubled, chars: ch.chars, W: ch.W, tauExt: ch.tauExt, defects: ch.defects })),
         });

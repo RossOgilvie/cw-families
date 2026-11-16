@@ -342,36 +342,59 @@ export function genus2Anchor(r, lamNode, tau1, eps = 1e-3) {
 }
 
 /**
- * The genus 2 edge from candidate 1 (the result of candidate1): open its node into the anchor, follow the
- * Whitham curve (the period plane fixed up to scale: the internal lattice, scaled) in the direction in
- * which alpha_2 leaves the circle, and continue the pair of the remaining class from its genus 1 position
- * at the event (lifted by nu_2 = nu_1 sqrt(-conj lam_0) (lam - lam_0)) until it arrives at S^1.
- * Returns { anchor, samples: [{ s, alphas, W }], events: [{ s, alphas, k, W, lamNode, P, Q, gap }], end,
- *   openEnd (openEndInfo, when the edge ends near the open end without an arrival) }.
+ * The genus 2 edge from candidate 1 (the result of candidate1), parametrized by the scale of the branch
+ * points. Gauge (as WhithamCurve: arg(alpha_1 alpha_2) fixed at the anchor, 2 psi):
+ *   alpha_1 = t beta e^{i psi},   alpha_2 = (t / beta) e^{i psi},   t = sqrt|alpha_1 alpha_2|,
+ * and the edge is the set ratio(t, beta) = the internal period ratio, solved by Newton in beta (2 real
+ * equations, 2 real unknowns) and continued in sigma = log t from the anchor (the node of candidate 1,
+ * opened by eps) down to tMin (default 1e-3: the open-end quantities converge with error O(t)). t decreases monotonically along the edge, and beta stays of size 1 up to
+ * the open end, where the rescaled roots are check-alpha = beta, 1/beta (genus 2 paper, "The Open Ends").
+ * The remaining pair is lifted at the node (nu_2 = nu_1 sqrt(-conj lam_0) (lam - lam_0)) and continued;
+ * its arrival at S^1 is refined by bisection in sigma.
+ * Returns { anchor, samples: [{ t, s (= -log(t / t_anchor)), alphas, W, pair }], events: [{ t, s, alphas,
+ *   k, W, lamNode, P, Q, gap, name }], end, openEnd (when tMin is reached without an arrival) }.
  */
-export function genus2Edge(c1, { eps = 1e-3, ds = 0.02, sMax = 6, maxEvents = 1 } = {}) {
+export function genus2Edge(c1, { eps = 1e-3, tMin = 1e-3, dSigma = 0.1, maxEvents = 1 } = {}) {
   const tau1 = c1.frame.tau1, ev = c1.event;
   const otherName = ev.name === 'tau' ? 'third' : 'tau';
   const other = ev.others[otherName];
   const anchor = genus2Anchor(ev.r, ev.lamNode, tau1, eps);
+  // the target ratio in the sign convention of the reference used below (the period vectors are only
+  // defined up to sign, so the ratio is defined up to sign)
+  const ref0 = ellVector(anchor.alphas), r0 = cdivc(ref0[1], ref0[0]);
+  const target = dist(r0, anchor.target) <= dist(r0, anchor.target.map((x) => -x)) ? anchor.target : anchor.target.map((x) => -x);
   // a_{g+1} = a_g (lam - alpha)(1 - conj(alpha) lam) and (lam - lam0)(1 - conj(lam0) lam) = -conj(lam0) (lam - lam0)^2
   const lam0 = ev.lamNode, c = csqrtc([-lam0[0], lam0[1]]);
   const lift = (p) => ({ lam: p.lam, nu: cmul(cmul(p.nu, c), [p.lam[0] - lam0[0], p.lam[1] - lam0[1]]) });
-  let cur = { P: lift(other.P), Q: lift(other.Q), cls: null };
-  const curve = new WhithamCurve(anchor.alphas);
-  // direction: alpha_2 moves into the disc
-  // (very short steps from the anchor can fail in WhithamCurve.at, so probe at ±0.05)
-  const rad = (s) => { const p = curve.at(s); return Math.abs(p.s - s) < 1e-9 ? Math.hypot(...p.alphas[1]) : 1; };
-  const dir = rad(0.05) < rad(-0.05) ? 1 : -1;
-  // a point of the curve at s, trying slightly further along when the corrector fails on a short step
-  const pointAt = (sv) => {
-    for (const extra of [0, 0.25, 0.5, 1]) {
-      const target = sv + dir * extra * ds, p = curve.at(target);
-      if (Math.abs(p.s - target) < 1e-12) return p;
+  const [A1, A2] = anchor.alphas, prod = cmul(A1, A2);
+  const psi = Math.atan2(prod[1], prod[0]) / 2, ePsi = [Math.cos(psi), Math.sin(psi)];
+  const tA = Math.sqrt(Math.hypot(...prod));
+  const alphasOf = (t, beta) => [cmul(beta, ePsi).map((x) => t * x), cmul(cdivc([1, 0], beta), ePsi).map((x) => t * x)];
+  let beta = cmul(A1, [ePsi[0], -ePsi[1]]).map((x) => x / tA);
+  let ref = ref0;
+  /** beta on the edge at scale t, by Newton from a guess. Returns { beta, ell, ok }. */
+  const solveBeta = (t, guess, refEll) => {
+    let b = guess.slice(), r = refEll;
+    const F = (bb) => { const e = ellVector(alphasOf(t, bb), r); const q = cdivc(e[1], e[0]); return { f: [q[0] - target[0], q[1] - target[1]], e }; };
+    let cur = F(b);
+    for (let it = 0; it < 20; it++) {
+      if (Math.hypot(...cur.f) < 1e-12) return { beta: b, ell: cur.e, ok: true };
+      const h = 1e-7 * Math.max(1, Math.hypot(...b)), J = [[0, 0], [0, 0]];
+      for (let j = 0; j < 2; j++) {
+        const bp = b.slice(); bp[j] += h;
+        const fp = F(bp).f;
+        J[0][j] = (fp[0] - cur.f[0]) / h; J[1][j] = (fp[1] - cur.f[1]) / h;
+      }
+      const det = J[0][0] * J[1][1] - J[0][1] * J[1][0];
+      if (!(Math.abs(det) > 0)) break;
+      const db = [-(J[1][1] * cur.f[0] - J[0][1] * cur.f[1]) / det, -(J[0][0] * cur.f[1] - J[1][0] * cur.f[0]) / det];
+      // damping: beta moves by at most a quarter of its size per iteration
+      const sc = Math.min(1, (0.25 * Math.hypot(...b)) / Math.max(1e-300, Math.hypot(...db)));
+      b = [b[0] + sc * db[0], b[1] + sc * db[1]];
+      cur = F(b); r = cur.e;
     }
-    return null;
+    return { beta: b, ell: cur.e, ok: Math.hypot(...cur.f) < 1e-9 };
   };
-  let ref = ellVector(anchor.alphas);
   const pairAt2 = (alphas, start, refEll) => {
     const { ell, k } = kVectors(alphas, refEll);
     const Q = new QMap(alphas);
@@ -379,53 +402,67 @@ export function genus2Edge(c1, { eps = 1e-3, ds = 0.02, sMax = 6, maxEvents = 1 
     return { ...R, ell, k, cls: classifyPair(R.P, R.Q) };
   };
   const Wat = (alphas, k) => Math.abs(willmoreFrame(leafData(alphas), ...dualBasis(k[0], k[1])));
+  const jump = (a, b) => dist(a.lam, b.lam) > 0.15 * Math.max(0.05, Math.hypot(...b.lam));
   const samples = [], events = [];
-  let s = 0, step = ds, end = { s: dir * sMax, why: 'sMax' };
-  // the starting point
+  let end = { t: tMin, why: 'tMin' };
+  let cur = { P: lift(other.P), Q: lift(other.Q), cls: null };
   {
     const R = pairAt2(anchor.alphas, cur, ref);
-    if (!R.ok) return { anchor, samples, events, end: { s: 0, why: 'the pair could not be continued into genus 2' } };
+    if (!R.ok) return { anchor, samples, events, end: { t: tA, why: 'the pair could not be continued into genus 2' }, openEnd: null };
     cur = { P: R.P, Q: R.Q, cls: R.cls };
     ref = R.ell;
-    samples.push({ s: 0, alphas: anchor.alphas, W: Wat(anchor.alphas, R.k), pair: R.cls });
+    samples.push({ t: tA, s: 0, alphas: anchor.alphas, W: Wat(anchor.alphas, R.k), pair: R.cls });
   }
-  while (Math.abs(s) < sMax) {
-    let R, p, next, ok = false;
-    for (let tries = 0; tries < 8 && !ok; tries++) {
-      next = s + dir * step;
-      p = pointAt(next);
-      if (!p) { end = { s: next, why: `the Whitham curve ends (${curve.fail || 'corrector'})` }; break; }
-      next = p.s;
-      R = pairAt2(p.alphas, cur, ref);
-      const jump = (a, b) => dist(a.lam, b.lam) > 0.15 * Math.max(0.05, Math.hypot(...b.lam));
-      ok = R.ok && !jump(R.P, cur.P) && !jump(R.Q, cur.Q);
+  let sigma = Math.log(tA), step = dSigma, betaPrev = null, sigmaPrev = null;
+  const sigmaMin = Math.log(tMin);
+  while (sigma > sigmaMin + 1e-12) {
+    let next, sol, R, ok = false;
+    for (let tries = 0; tries < 10 && !ok; tries++) {
+      next = Math.max(sigmaMin, sigma - step);
+      // predictor: linear in sigma
+      const guess = betaPrev ? beta.map((x, i) => x + ((x - betaPrev[i]) * (next - sigma)) / (sigma - sigmaPrev)) : beta;
+      sol = solveBeta(Math.exp(next), guess, ref);
+      ok = sol.ok && dist(sol.beta, beta) < 0.2 * Math.hypot(...beta);
+      if (ok) {
+        R = pairAt2(alphasOf(Math.exp(next), sol.beta), cur, sol.ell);
+        ok = R.ok && !jump(R.P, cur.P) && !jump(R.Q, cur.Q);
+      }
       if (!ok) step /= 2;
     }
-    if (!ok) { if (end.why === 'sMax') end = { s: next, why: 'continuation failed' }; break; }
-    step = Math.min(ds, step * 1.5);
+    if (!ok) { end = { t: Math.exp(next), why: 'continuation failed' }; break; }
+    step = Math.min(dSigma, step * 1.5);
     if (cur.cls && cur.cls.kind === 'off' && R.cls.kind !== 'off') {
-      let hi = s, lo = next, sHi = cur, refHi = ref;
-      for (let i = 0; i < 50 && Math.abs(hi - lo) > 1e-12; i++) {
-        const m = (hi + lo) / 2, pm = curve.at(m);
-        if (Math.abs(pm.s - m) > 1e-12) break;
-        const Rm = pairAt2(pm.alphas, sHi, refHi);
-        if (Rm.ok && Rm.cls.kind === 'off') { hi = m; sHi = { P: Rm.P, Q: Rm.Q }; refHi = Rm.ell; } else lo = m;
+      // arrival: bisection in sigma, continuing from the side where the pair is off S^1
+      let hi = sigma, lo = next, sHi = { P: cur.P, Q: cur.Q }, bHi = beta, refHi = ref;
+      for (let i = 0; i < 50 && hi - lo > 1e-13; i++) {
+        const m = (hi + lo) / 2, sm = solveBeta(Math.exp(m), bHi, refHi);
+        if (!sm.ok) { lo = m; continue; }
+        const Rm = pairAt2(alphasOf(Math.exp(m), sm.beta), sHi, sm.ell);
+        if (Rm.ok && Rm.cls.kind === 'off') { hi = m; sHi = { P: Rm.P, Q: Rm.Q }; bHi = sm.beta; refHi = sm.ell; } else lo = m;
       }
-      const pe = curve.at(hi), Re = pairAt2(pe.alphas, sHi, refHi);
+      const tE = Math.exp(hi), alE = alphasOf(tE, bHi), Re = pairAt2(alE, sHi, refHi);
       const mid = [(Re.P.lam[0] + Re.Q.lam[0]) / 2, (Re.P.lam[1] + Re.Q.lam[1]) / 2], l = Math.hypot(...mid);
       const gap = dist(Re.P.lam, Re.Q.lam);
       if (gap < 1e-2) {
-        events.push({ s: hi, alphas: pe.alphas, k: Re.k, W: Wat(pe.alphas, Re.k), lamNode: [mid[0] / l, mid[1] / l], P: Re.P, Q: Re.Q, gap, name: otherName });
-        samples.push({ s: hi, alphas: pe.alphas, W: Wat(pe.alphas, Re.k), pair: Re.cls });
-      } else end = { s: hi, why: `the pair jumped branches (gap ${gap.toFixed(3)})` };
-      if (events.length >= maxEvents || gap >= 1e-2) { if (events.length >= maxEvents) end = { s: hi, why: 'event' }; break; }
+        const W = Wat(alE, Re.k);
+        events.push({ t: tE, s: Math.log(tA / tE), alphas: alE, k: Re.k, W, lamNode: [mid[0] / l, mid[1] / l], P: Re.P, Q: Re.Q, gap, name: otherName });
+        samples.push({ t: tE, s: Math.log(tA / tE), alphas: alE, W, pair: Re.cls });
+        if (events.length >= maxEvents) { end = { t: tE, why: 'event' }; break; }
+      } else { end = { t: tE, why: `the pair jumped branches (gap ${gap.toFixed(3)})` }; break; }
     }
-    s = next;
+    betaPrev = beta; sigmaPrev = sigma;
+    beta = sol.beta; sigma = next; ref = R.ell;
     cur = { P: R.P, Q: R.Q, cls: R.cls };
-    ref = R.ell;
-    samples.push({ s, alphas: p.alphas, W: Wat(p.alphas, R.k), pair: R.cls });
+    const al = alphasOf(Math.exp(sigma), beta);
+    samples.push({ t: Math.exp(sigma), s: Math.log(tA / Math.exp(sigma)), alphas: al, W: Wat(al, R.k), pair: R.cls });
   }
-  const openEnd = events.length ? null : openEndInfo(samples, tau1);
+  let openEnd = null;
+  if (!events.length && end.why === 'tMin') {
+    // the open end: the rescaled roots are beta, 1/beta (product 1 in this gauge)
+    const tau = reduceTau(openEndTau(beta)), refTau = reduceTau(tau1);
+    const tauError = Math.min(Math.hypot(tau[0] - refTau[0], tau[1] - refTau[1]), Math.hypot(tau[0] + refTau[0], tau[1] - refTau[1]));
+    openEnd = { t: Math.exp(sigma), alpha: beta, tau, tauError, WRatio: samples[samples.length - 1].W / (4 * Math.PI) };
+  } else if (!events.length) openEnd = openEndInfo(samples, tau1);
   return { anchor, samples, events, end, openEnd };
 }
 
@@ -467,11 +504,14 @@ export function candidate2(tau, opts = {}) {
     // no arrival: near the open end, candidate 2 (the two pairs of branch points as Sym points) at the
     // last point of the edge approximates the limit, a branched double cover of the sphere
     if (!edge.openEnd) return { tau, frame: c1.frame, c1, edge, event: null };
-    const last = edge.samples[edge.samples.length - 1], al = last.alphas;
+    // drawn at a moderate scale (t >= 0.03): closer to the open end the frame equations get stiff
+    // (kappa_0 ~ 2t)
+    const drawable = edge.samples.filter((sm) => sm.t >= 0.03);
+    const last = drawable.length ? drawable[drawable.length - 1] : edge.samples[0], al = last.alphas;
     const k = ellVector(al).map(([x, y]) => [x, -y]);
     const syms = [{ lam: al[0], nu: [0, 0] }, { lam: al[1], nu: [0, 0] }];
     const near = { pair: ['a1', 'a2'], syms, ...candidate(al, dualBasis(k[0], k[1]), syms) };
-    return { tau, frame: c1.frame, c1, edge, event: null, openEnd: edge.openEnd, alphas: al, choices: [near] };
+    return { tau, frame: c1.frame, c1, edge, event: null, openEnd: edge.openEnd, alphas: al, drawnAt: last.t, choices: [near] };
   }
   const al = event.alphas;
   const pts = { a1: { lam: al[0], nu: [0, 0] }, a2: { lam: al[1], nu: [0, 0] }, node: symPoint(al, event.lamNode) };

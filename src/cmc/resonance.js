@@ -208,10 +208,10 @@ export class QMap {
       const r0 = [-r[0][0], -r[0][1]], r1 = [-r[1][0], -r[1][1]];
       let dP = cdiv(csub(cmul(d, r0), cmul(b, r1)), det);
       let dQ = cdiv(csub(cmul(a, r1), cmul(c, r0)), det);
-      // damping: stay well clear of the singular points
-      const lim = 0.3 * Math.min(this._dist(p.lam), this._dist(qq.lam));
-      const big = Math.max(cabs(dP), cabs(dQ));
-      if (big > lim) { const s = lim / big; dP = [dP[0] * s, dP[1] * s]; dQ = [dQ[0] * s, dQ[1] * s]; }
+      // damping: each point stays well clear of the singular points near it (one common factor, so the
+      // Newton direction is kept; P and Q can live on very different scales, as near the open ends)
+      const s = Math.min(1, (0.3 * this._dist(p.lam)) / Math.max(1e-300, cabs(dP)), (0.3 * this._dist(qq.lam)) / Math.max(1e-300, cabs(dQ)));
+      if (s < 1) { dP = [dP[0] * s, dP[1] * s]; dQ = [dQ[0] * s, dQ[1] * s]; }
       const sp = this.segment(p, cadd(p.lam, dP)), sq = this.segment(qq, cadd(qq.lam, dQ));
       p = { lam: sp.lam, nu: sp.nu }; qq = { lam: sq.lam, nu: sq.nu };
       qP = [0, 1].map((j) => cadd(qP[j], sp.dq[j]));

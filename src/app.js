@@ -487,12 +487,12 @@ function candidate2Note(R) {
   if (!R.event && R.openEnd) {
     const o = R.openEnd;
     return `${order}\n${one}\nGenus 2: no arrival before the open end (both branch points go to 0). There candidates 2 and 3 become a branched double cover of the sphere, W = 8π.\n` +
-      `At the last point (t = ${fixed(o.t, 4)}): W/8π = ${fixed(o.WRatio, 4)}; open-end τ = ${c(o.tau)} (internal ${o.tauError < 0.05 ? 'matches' : 'differs'} to ${fixed(o.tauError, 3)}).\n` +
-      `Drawn: candidate 2 there (W = ${fixed(R.choices[0].W / PI ** 2, 4)} π², closing ${R.choices[0].defects.closing.toExponential(0)}).`;
+      `Followed to t = ${o.t.toExponential(0)} (the scale of the branch points): W/8π = ${fixed(o.WRatio, 5)}; open-end τ of the rescaled roots = ${c(o.tau)}, the internal τ to ${o.tauError.toExponential(1)}.\n` +
+      `Drawn: candidate 2 at t = ${fixed(R.drawnAt, 3)} (W = ${fixed(R.choices[0].W / PI ** 2, 4)} π², closing ${R.choices[0].defects.closing.toExponential(0)}).`;
   }
   if (!R.event) return `${order}\n${one}\nGenus 2: no arrival (${R.end.why}).`;
   const lines = R.choices.map((ch) => `  ${CHOICE_NAMES[ch.pair.join()]} (${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')}): external τ = ${c(ch.tauExt)}, closing ${ch.defects.closing.toExponential(0)}`);
-  return `${order}\n${one}\nGenus 2: the remaining pair arrives at s = ${fixed(R.event.s, 4)}; W = ${fixed(R.choices[0].W, 4)} = ${fixed(R.choices[0].W / PI ** 2, 4)} π² (doubled lattice) for every choice of Sym points:\n${lines.join('\n')}\nComputed in ${R.ms.toFixed(0)} ms.`;
+  return `${order}\n${one}\nGenus 2: the remaining pair arrives at t = ${fixed(R.event.t, 5)} (the scale of the branch points); W = ${fixed(R.choices[0].W, 4)} = ${fixed(R.choices[0].W / PI ** 2, 4)} π² (doubled lattice) for every choice of Sym points:\n${lines.join('\n')}\nComputed in ${R.ms.toFixed(0)} ms.`;
 }
 /** The paths of the branch points along the genus 2 edge, for the λ-plane. */
 function candidate2Path(R) {
