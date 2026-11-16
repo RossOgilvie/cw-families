@@ -71,6 +71,9 @@ function parseNum(str) {
 const VIEW_DEFAULTS = {
   tau: [], z0: [0, 0], width: 12, height: 12, curv: true, phi: 0,
   gridStep: 0.25, lineW: 0.6, hmax: 0.05, adaptive: false, res: 240,
+  // generalized Sym points (cw_candidates.md, F7): the immersion into R^4 from two points of the
+  // spectral curve, projected to R^3
+  gen: { on: false, lams: [[0, 1], [0, -1]], signs: [1, 1], proj: 'drop4' },
 };
 // Widths of the rotational examples are exact closing periods of the parallels, pi / sqrt(det X(lam0)).
 // Bubbletons: a double branch point at the k-th resonance point of the cylinder, where its monodromy is ±I.
@@ -91,13 +94,16 @@ const PRESETS = [
   // real and 2 w2 - w1 = 4.47988 i; E(w1) turns by 2/3 about an axis, E(2 w2 - w1) = id, so the torus
   // lattice is <3 w1, w1 + w2>, whose fundamental domain is the brick 3 w1 x (4.47988 / 2).
   { name: 'Wente torus (three lobes)', s: { alphas: [[0.1412634686, 0.1017768953], [0.1412634686, -0.1017768953]], theta0: 0, width: 6.950948617, height: 2.239937825, gridStep: 6.950948617 / 72, res: 360 } },
+  { name: 'Clifford torus (two Sym points ±i, g = 0)', s: { alphas: [], theta0: 0, width: PI * Math.SQRT2, height: PI * Math.SQRT2, gridStep: PI * Math.SQRT2 / 24, gen: { on: true, lams: [[0, 1], [0, -1]], signs: [1, 1], proj: 'drop4' } } },
+  { name: 'Homogeneous torus, ratio 2 (two Sym points, g = 0)', s: { alphas: [], theta0: 0, width: PI / Math.cos(Math.atan(0.5)), height: PI / Math.sin(Math.atan(0.5)), gridStep: PI / Math.cos(Math.atan(0.5)) / 16, gen: { on: true, lams: [[0.6, 0.8], [0.6, -0.8]], signs: [1, 1], proj: 'drop4' } } },
+  { name: 'Branch point as a Sym point (g = 1, in R⁴)', s: { alphas: [polar(0.5, 0)], theta0: 0, width: 6, height: 6, gen: { on: true, lams: [polar(0.5, 0), [0, 1]], signs: [1, 1], proj: 'drop4' } } },
   { name: 'Threefold (g = 3)', s: { alphas: [polar(0.4, 0), polar(0.4, 2 * PI / 3), polar(0.4, -2 * PI / 3)], theta0: 0.3, tau: [0], width: 6, height: 6 } },
   { name: 'Genus 4', s: { alphas: [polar(0.54, 0.38), polar(0.4, PI / 2), polar(0.58, -2.6), polar(0.63, -1.25)], theta0: 1, tau: [0.8, -0.5], width: 6, height: 6 } },
 ];
 
 const state = {
   alphas: [polar(0.49, 1), polar(0.49, -1)], theta0: 0,
-  ...VIEW_DEFAULTS, width: 6, height: 6,
+  ...VIEW_DEFAULTS, gen: structuredClone(VIEW_DEFAULTS.gen), width: 6, height: 6,
   res: 240, hmax: 0.05, colour: 'side', grid: true, transp: 0, H: 0.5, adapt: true,
   front: '#6f8fb0', back: '#e8c9a0', bg: '#f2eee3',
 };
@@ -118,6 +124,8 @@ function linkURL() {
   p.set('a', state.alphas.map(([re, im]) => `${fmt(re, 10)},${fmt(im, 10)}`).join(';'));
   p.set('l', fmt(state.theta0, 10));
   if (state.tau.length) p.set('t', state.tau.map((x) => fmt(x)).join(','));
+  if (state.gen.on && state.gen.proj !== 'drop4') p.set('j', state.gen.proj);
+  if (state.gen.on) p.set('y', state.gen.lams.map(([re, im], i) => `${fmt(re, 10)},${fmt(im, 10)},${state.gen.signs[i]}`).join(';'));
   p.set('c', state.z0.map((x) => fmt(x)).join(','));
   p.set('d', `${fmt(state.width, 8)},${fmt(state.height, 8)}`);
   if (!state.curv) p.set('p', fmt(state.phi));
@@ -151,6 +159,13 @@ function readHash() {
     state.alphas = state.alphas.slice(0, MAX_GENUS);
     if (p.has('l')) state.theta0 = +p.get('l') || 0;
     state.tau = nums(p.get('t'));
+    state.gen.on = false;
+    if (p.has('y')) {
+      const ys = p.get('y').split(';').map(nums);
+      if (ys.length === 2 && ys.every((v) => v.length === 3 && v.every(Number.isFinite))) {
+        state.gen = { ...state.gen, proj: p.get('j') === 'stereo4' ? 'stereo4' : 'drop4', on: true, lams: ys.map((v) => [v[0], v[1]]), signs: ys.map((v) => (v[2] < 0 ? -1 : 1)) };
+      }
+    }
     if (p.has('c')) { const c = nums(p.get('c')); if (c.length === 2) state.z0 = c; }
     if (p.has('d')) { const d = nums(p.get('d')); if (d.length === 2 && d.every((x) => x > 0)) [state.width, state.height] = d; }
     state.curv = !p.has('p');
@@ -190,7 +205,7 @@ function gridDims(res) {
 
 // everything that determines the surface (not the mesh or the accuracy)
 const surfaceKey = () => JSON.stringify([state.alphas, state.theta0, state.tau, state.z0,
-  state.curv ? null : state.phi, state.width, state.height]);
+  state.curv ? null : state.phi, state.width, state.height, state.gen.on ? state.gen : null]);
 
 function params(full) {
   const [nx, ny] = gridDims(full ? state.res : 72);
@@ -199,6 +214,7 @@ function params(full) {
     phi: state.curv ? null : state.phi, width: state.width, height: state.height,
     nx, ny, hmax: full ? state.hmax : Math.max(state.hmax, 0.1),
   };
+  if (state.gen.on) p.gen = { lams: state.gen.lams, signs: state.gen.signs, projection: state.gen.proj };
   // error-controlled steps for the full mesh: on request, or when the preview shows the conformal factor
   // bubbling (near the corner of the spectral data where the branch points go to 0, fixed steps lose it)
   // (the latest result stands in for the preview while the data move, e.g. along a flow)
@@ -321,10 +337,15 @@ function show(res) {
   viewer.setSurface(res, vals);
   viewer.setStyle(textureStyle(range));
   if (needFrame) { viewer.frame(); needFrame = false; }
-  widget.set({ divisor: res.divisor });
+  if (res.divisor) widget.set({ divisor: res.divisor });
   const g = genus();
   const argQ = hopfArg(state.alphas, state.theta0);
   const size = Math.max(res.bbox[3] - res.bbox[0], res.bbox[4] - res.bbox[1], res.bbox[5] - res.bbox[2]) / (2 * state.H);
+  if (state.gen.on) {
+    showStatus(`Genus ${g} · two Sym points, f in ℝ⁴ (${state.gen.proj === 'stereo4' ? 'stereographic from e₄' : 'drop x₄'}) · κ₀ = ${fmt(kappa0(state.alphas), 3)}` +
+      ` · ${res.nx}×${res.ny} in ${res.stats.ms.toFixed(0)} ms · extent ${size.toPrecision(3)}`, false);
+    return;
+  }
   showStatus(
     `Genus ${g} · H = ${fmt(state.H, 3)} · κ₀ = ${fmt(kappa0(state.alphas), 3)} · arg Q = ${fixed(wrapPi(argQ) / PI, 3)}π` +
     ` · ${res.nx}×${res.ny} in ${res.stats.ms.toFixed(0)} ms · extent ${size.toPrecision(3)}` +
@@ -348,6 +369,7 @@ const widget = new SpectralWidget($('lam'), (s, dragging) => {
   const gOld = genus();
   state.alphas = s.alphas;
   state.theta0 = s.theta0;
+  if (s.gen) { state.gen.lams = s.gen.lams; state.gen.signs = s.gen.signs; refreshGen(); }
   if (genus() !== gOld) genusChanged();
   else refreshAlphaValues();
   changed(dragging);
@@ -413,6 +435,28 @@ function refreshAlphaValues() {
   });
   if (document.activeElement !== $('theta0')) $('theta0').value = fixed(wrapPi(state.theta0) / PI, 3);
 }
+
+// generalized Sym points: checkbox, readout, projection
+function refreshGen() {
+  const G = state.gen;
+  $('genOn').checked = G.on;
+  $('genBox').hidden = !G.on;
+  const show = ([re, im], s, i) => `λ<sub>${i + 1}</sub> = ${fixed(re, 3)} ${im < 0 ? '−' : '+'} ${fixed(Math.abs(im), 3)}i, sheet ${s > 0 ? '+' : '−'}`;
+  $('genInfo').innerHTML = G.lams.map((l, i) => show(l, G.signs[i], i)).join('<br>');
+  $('proj').value = G.proj;
+  widget.set({ gen: G.on ? { lams: G.lams, signs: G.signs } : null });
+}
+$('genOn').addEventListener('change', () => {
+  state.gen.on = $('genOn').checked;
+  if (state.gen.on && state.alphas.length && state.gen.lams.every(([re, im]) => Math.hypot(re, im) > 0.999 && Math.hypot(re, im) < 1.001)) {
+    // a first look: one generalized Sym point at a branch point
+    state.gen.lams = [state.alphas[0].slice(), state.gen.lams[1]];
+  }
+  refreshGen();
+  needFrame = true;
+  changed(false);
+});
+$('proj').addEventListener('change', () => { state.gen.proj = $('proj').value; changed(false); });
 
 $('theta0').addEventListener('change', () => {
   const v = parseNum($('theta0').value);
@@ -1584,6 +1628,7 @@ function refreshAll() {
   buildAlphaList();
   buildTau();
   widget.set({ alphas: state.alphas, theta0: state.theta0, divisor: [] });
+  refreshGen();
   for (const s of [...domainSliders, phiSlider, ...appearanceSliders, Hslider]) s.refresh();
   $('res').value = String(state.res);
   if (!$('res').value) { $('res').add(new Option(String(state.res), String(state.res))); $('res').value = String(state.res); }

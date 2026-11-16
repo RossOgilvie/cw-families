@@ -10,6 +10,7 @@ import { periodVector, periodLattice, commonRootsOnCircle } from '../src/cmc/per
 import { WhithamCurve } from '../src/cmc/whitham.js';
 import { RootFlow, symData } from '../src/cmc/rootflow.js';
 import { ellipticKE, nodalBoundary, f0, openEndTau } from '../src/cmc/genus2.js';
+import { PairIntegrator, leftEigenvector, nuAt, qmul, qdiv, computeGenSurface } from '../src/cmc/gensym.js';
 import {
   TauFlow, leafData, periodsOf, rationalPlanes, saturate, reduceFrame, classOrder, nearbyPeriods,
   PlaneFlow, latticeFrame, predictMoves,
@@ -379,6 +380,99 @@ console.log('genus 2: the boundary of S^2 (genus2.js) against the periods:');
   const lin = (w) => [w[0] * d.p1[1][0] + w[1] * d.pi[1][0], w[0] * d.p1[1][1] + w[1] * d.pi[1][1]];
   const [u, v] = [lin(M.w[0]), lin(M.w[1])];
   check('open end: on the real locus of f0 the ratio of linear coefficients is real', Math.abs(u[0] * v[1] - u[1] * v[0]) / Math.hypot(...u) / Math.hypot(...v), 1e-3);
+}
+
+// ------------------------------------------------------------------ generalized Sym formula (gensym.js)
+console.log('generalized Sym formula f = Q(u1 F(lam1)) Q(u2 F(lam2))^{-1} (cw_candidates.md, F7):');
+{
+  let seed = 7;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 - 0.5; };
+  const at = (I, Z, x, y) => {
+    const st = I.initialState(Z);
+    I.march(st, 1, 0, x, 0.005); I.march(st, 0, 1, y, 0.005);
+    return st;
+  };
+  const qn = (q) => q[0] ** 2 + q[1] ** 2 + q[2] ** 2 + q[3] ** 2;
+  const qdot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2] + p[3] * q[3];
+  // 1. conformal for arbitrary lambda in C^* and arbitrary rows (all sections are holomorphic sections of one bundle)
+  for (const alphas of [[], [[0.5, 0]], [[0.4, 0.3], [-0.2, 0.5]]]) {
+    const Z = killingField(alphas);
+    for (const lams of [[[Math.cos(0.4), Math.sin(0.4)], [Math.cos(2), Math.sin(2)]], [[0.57, 0.18], [-0.13, 0.99]], [[0.5, 0.2], [1.8, -0.9]]]) {
+      const I = new PairIntegrator(alphas, lams);
+      const us = [[rnd(), rnd(), rnd(), rnd()], [rnd(), rnd(), rnd(), rnd()]];
+      let worst = 0;
+      for (const [x, y] of [[0.3, 0.7], [1.1, -0.4], [-0.8, 1.3]]) {
+        const [, fx, fy] = I.jet(at(I, Z, x, y), us);
+        const n = qn(fx);
+        worst = Math.max(worst, Math.abs(n - qn(fy)) / n, Math.abs(qdot(fx, fy)) / n);
+      }
+      check(`conformal, g=${alphas.length}, lam = ${lams.map(([r, i]) => `${r.toFixed(2)}${i < 0 ? '-' : '+'}${Math.abs(i).toFixed(2)}i`).join(', ')}`, worst, 1e-12);
+    }
+  }
+  // 2. on S^1 it is the S^3 Sym–Bobenko formula: Q(u1)^{-1} f Q(u2) = F(lam1) F(lam2)^{-1}
+  {
+    const alphas = [[0.5 * Math.cos(0.4), 0.5 * Math.sin(0.4)]], Z = killingField(alphas);
+    const lams = [[Math.cos(0.9), Math.sin(0.9)], [Math.cos(2.3), Math.sin(2.3)]];
+    const I = new PairIntegrator(alphas, lams);
+    const us = [[rnd(), rnd(), rnd(), rnd()], [rnd(), rnd(), rnd(), rnd()]];
+    let worst = 0;
+    for (const [x, y] of [[0.5, -1.2], [-1.4, 0.3]]) {
+      const st = at(I, Z, x, y), f = new Float64Array(4);
+      I.evaluate4(st, us, f, 0);
+      const e1 = [1, 0, 0, 0], [F1, F2] = I.rows(st, [e1, e1]), sym = new Float64Array(4);
+      qdiv(F1, F2, sym, 0);
+      // Q(u1)^{-1} f Q(u2), with Q(u1)^{-1} = conj(Q(u1)) / |u1|^2
+      const alt = qmul([us[0][0], -us[0][1], -us[0][2], -us[0][3]], qmul(f, us[1])).map((x) => x / qn(us[0]));
+      worst = Math.max(worst, Math.max(...alt.map((x, e) => Math.abs(x - sym[e]))));
+    }
+    check('lam_1, lam_2 on S^1: Q(u1)^{-1} f Q(u2) = F(lam1) F(lam2)^{-1}', worst, 1e-9);
+  }
+  // 3. genus 0 homogeneous tori: two rho-pairs over S^1, closing on (pi/cos s) x (pi/sin s),
+  //    W = int |Laplace f|^2 / (4 |f_x|^2) = pi^2 (t + 1/t) with t = cot s; t = 1 is the Clifford torus.
+  for (const sAng of [Math.PI / 4, 0.6, 0.4]) {
+    const L1 = Math.PI / Math.cos(sAng), L2 = Math.PI / Math.sin(sAng), n = 64;
+    const lams = [[Math.cos(2 * sAng), Math.sin(2 * sAng)], [Math.cos(2 * sAng), -Math.sin(2 * sAng)]];
+    const Z = killingField([]), I = new PairIntegrator([], lams);
+    let best = null;
+    for (const s1 of [1, -1]) for (const s2 of [1, -1]) {
+      const us = lams.map((lam, j) => leftEigenvector(Z, lam, nuAt([], lam, [s1, s2][j])));
+      const F = (x, y) => { const f = new Float64Array(4); I.evaluate4(at(I, Z, x, y), us, f, 0); return f; };
+      const f00 = F(0.3, 0.2);
+      const per = Math.max(...[F(0.3 + L1, 0.2), F(0.3, 0.2 + L2)].map((q) => Math.max(...q.map((x, e) => Math.abs(x - f00[e])))));
+      if (!best || per < best.per) best = { per, us };
+    }
+    check(`s = ${sAng.toFixed(3)}: f closes on the rectangle (pi/cos s) x (pi/sin s)`, best.per, 1e-8);
+    // f on a periodic grid, then fourth-order periodic differences
+    const fs = [];
+    for (let j = 0; j < n; j++) {
+      const st = at(I, Z, 0, (j * L2) / n);
+      for (let i = 0; i < n; i++) {
+        const f = new Float64Array(4); I.evaluate4(st, best.us, f, 0); fs.push(f);
+        I.march(st, 1, 0, L1 / n, 0.005);
+      }
+    }
+    const h1 = L1 / n, h2 = L2 / n, G = (i, j) => fs[((j + n) % n) * n + ((i + n) % n)];
+    let W = 0;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const fx = [0, 1, 2, 3].map((e) => (-G(i + 2, j)[e] + 8 * G(i + 1, j)[e] - 8 * G(i - 1, j)[e] + G(i - 2, j)[e]) / (12 * h1));
+      const d2 = (A, B, C, D, E, h) => (-A + 16 * B - 30 * C + 16 * D - E) / (12 * h * h);
+      const lap = [0, 1, 2, 3].map((e) => d2(G(i - 2, j)[e], G(i - 1, j)[e], G(i, j)[e], G(i + 1, j)[e], G(i + 2, j)[e], h1)
+        + d2(G(i, j - 2)[e], G(i, j - 1)[e], G(i, j)[e], G(i, j + 1)[e], G(i, j + 2)[e], h2));
+      W += qn(lap) / (4 * qn(fx));
+    }
+    W *= h1 * h2;
+    const t = 1 / Math.tan(sAng);
+    check(`s = ${sAng.toFixed(3)}: W = pi^2 (t + 1/t) = ${(Math.PI ** 2 * (t + 1 / t)).toFixed(6)} (relative)`, Math.abs(W / (Math.PI ** 2 * (t + 1 / t)) - 1), 1e-5);
+  }
+  // 4. computeGenSurface runs and agrees with the integrator at a vertex
+  {
+    const alphas = [[0.5, 0.1]], lams = [[0.5, 0.1], [Math.cos(2.3), Math.sin(2.3)]];
+    const S = computeGenSurface({ alphas, lams, signs: [1, 1], width: 2, height: 2, nx: 5, ny: 5, hmax: 0.005 });
+    const I = new PairIntegrator(alphas, lams), f = new Float64Array(4);
+    I.evaluate4(at(I, killingField(alphas), 1, 1), S.us, f, 0);
+    const v = 4 * 5 + 4;
+    check('computeGenSurface vertex (1, 1) = direct integration (Float32)', Math.max(...[0, 1, 2, 3].map((e) => Math.abs(S.pos4[4 * v + e] - f[e]))), 1e-5);
+  }
 }
 
 // ------------------------------------------------------------------ timing

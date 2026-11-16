@@ -11,7 +11,7 @@ import { polyMul, polyEval, polySharp, polyRoots } from './poly.js';
 // ---------------------------------------------------------------- 2x2 complex matrix kernels
 
 /** C[co] += s * A[ao] B[bo], s = +1 or -1. */
-function mulAcc(A, ao, B, bo, C, co, s) {
+export function mulAcc(A, ao, B, bo, C, co, s) {
   const a0r = A[ao], a0i = A[ao + 1], a1r = A[ao + 2], a1i = A[ao + 3];
   const a2r = A[ao + 4], a2i = A[ao + 5], a3r = A[ao + 6], a3i = A[ao + 7];
   const b0r = B[bo], b0i = B[bo + 1], b1r = B[bo + 2], b1i = B[bo + 3];

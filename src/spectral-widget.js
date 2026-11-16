@@ -13,6 +13,9 @@
 // If given a Whitham family, draws the path of each branch point along it, coloured by the Willmore
 // functional W (blue low, rust high), with a tick across the path at the critical points of W.
 // Labels sit on the side of each point away from the origin and from its own trail.
+// With generalized Sym points on (gen), the two points lam_1, lam_2 (blue squares) replace lam0: they
+// move anywhere in C^*, snap onto the branch points and their reflections, and a double-click flips the
+// sheet of one.
 
 const R_VIEW = 1.25;       // half-width of the view in lambda units
 const R_MIN = 0.001, R_MAX = 0.999;
@@ -29,6 +32,7 @@ export class SpectralWidget {
     this.divisor = [];
     this.commonRoots = [];
     this.showDivisor = false;
+    this.gen = null; // { lams: [[re, im], [re, im]], signs: [s1, s2] } or null
     this.drag = null;
     this.hover = null;
     this.colours = {};
@@ -47,11 +51,13 @@ export class SpectralWidget {
     if ('family' in opts) this.family = opts.family;
     if ('commonRoots' in opts) this.commonRoots = opts.commonRoots || [];
     if ('showDivisor' in opts) this.showDivisor = opts.showDivisor;
+    if ('gen' in opts) this.gen = opts.gen ? { lams: opts.gen.lams.map((l) => l.slice()), signs: opts.gen.signs.slice() } : null;
     this.draw();
   }
 
   _emit(dragging) {
-    this.onChange({ alphas: this.alphas.map((a) => a.slice()), theta0: this.theta0 }, dragging);
+    const gen = this.gen ? { lams: this.gen.lams.map((l) => l.slice()), signs: this.gen.signs.slice() } : null;
+    this.onChange({ alphas: this.alphas.map((a) => a.slice()), theta0: this.theta0, gen }, dragging);
   }
 
   // ---------------------------------------------------------------- coordinates
@@ -77,9 +83,17 @@ export class SpectralWidget {
   _pick(x, y) {
     const tol = 13;
     let best = null, bd = tol;
-    const lp = this._toPx([Math.cos(this.theta0), Math.sin(this.theta0)]);
-    const dl = Math.hypot(lp[0] - x, lp[1] - y);
-    if (dl < bd) { best = { kind: 'lam' }; bd = dl; }
+    if (this.gen) {
+      this.gen.lams.forEach((l, i) => {
+        const p = this._toPx(l), d = Math.hypot(p[0] - x, p[1] - y);
+        if (d < bd) { best = { kind: 'gen', i }; bd = d; }
+      });
+      if (best) return best; // the Sym points sit on branch points when snapped: they take precedence
+    } else {
+      const lp = this._toPx([Math.cos(this.theta0), Math.sin(this.theta0)]);
+      const dl = Math.hypot(lp[0] - x, lp[1] - y);
+      if (dl < bd) { best = { kind: 'lam' }; bd = dl; }
+    }
     this.alphas.forEach((a, i) => {
       const p = this._toPx(a);
       const d = Math.hypot(p[0] - x, p[1] - y);
@@ -122,7 +136,29 @@ export class SpectralWidget {
         let r = Math.hypot(z[0], z[1]);
         const t = Math.atan2(z[1], z[0]);
         r = Math.min(R_MAX, Math.max(R_MIN, r));
+        const old = this.alphas[d.i];
         this.alphas[d.i] = this._snap([r * Math.cos(t), r * Math.sin(t)]);
+        // a generalized Sym point sitting on this branch point (or its reflection) moves with it
+        if (this.gen) {
+          const refl = ([re, im]) => { const r2 = re * re + im * im; return [re / r2, im / r2]; };
+          const same = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-12;
+          this.gen.lams = this.gen.lams.map((l) => (same(l, old) ? this.alphas[d.i].slice()
+            : same(l, refl(old)) ? refl(this.alphas[d.i]) : l));
+        }
+      } else if (d.kind === 'gen') {
+        let r = Math.hypot(z[0], z[1]);
+        const t = Math.atan2(z[1], z[0]);
+        r = Math.max(0.02, r);
+        let p = [r * Math.cos(t), r * Math.sin(t)];
+        if (!this.noSnap) {
+          const targets = this.alphas.flatMap(([re, im]) => { const r2 = re * re + im * im; return [[re, im], [re / r2, im / r2]]; });
+          const q = this._toPx(p);
+          for (const a of targets) {
+            const pa = this._toPx(a);
+            if (Math.hypot(pa[0] - q[0], pa[1] - q[1]) < 8) { p = a.slice(); break; }
+          }
+        }
+        this.gen.lams[d.i] = p;
       } else if (d.kind === 'lam') {
         this.theta0 = Math.atan2(z[1], z[0]);
         // snap onto a common root of the differentials (hold alt to avoid)
@@ -136,6 +172,7 @@ export class SpectralWidget {
         d.ang = a;
         const cr = Math.cos(da), ci = Math.sin(da);
         this.alphas = this.alphas.map(([re, im]) => [re * cr - im * ci, re * ci + im * cr]);
+        if (this.gen) this.gen.lams = this.gen.lams.map(([re, im]) => [re * cr - im * ci, re * ci + im * cr]);
         this.theta0 += da;
       }
       c.style.cursor = 'grabbing';
@@ -153,7 +190,9 @@ export class SpectralWidget {
     c.addEventListener('dblclick', (e) => {
       const [x, y] = this._eventPos(e);
       const hit = this._pick(x, y);
-      if (hit && hit.kind === 'alpha') {
+      if (hit && hit.kind === 'gen') {
+        this.gen.signs[hit.i] *= -1;
+      } else if (hit && hit.kind === 'alpha') {
         this.alphas.splice(hit.i, 1);
       } else if (!hit) {
         const z = this._fromPx(x, y);
@@ -249,7 +288,7 @@ export class SpectralWidget {
     ctx.beginPath(); ctx.arc(cx, cy, s, 0, 2 * Math.PI); ctx.stroke();
 
     // genus 1: the Delaunay diameter
-    if (this.alphas.length === 1) {
+    if (this.alphas.length === 1 && !this.gen) {
       const ur = Math.cos(this.theta0), ui = Math.sin(this.theta0);
       ctx.save();
       ctx.strokeStyle = muted;
@@ -338,6 +377,8 @@ export class SpectralWidget {
       this._label(ctx, 'α', String(i + 1), p, this._labelDir(p, i, others), ink, 9);
     });
 
+    if (this.gen) { this._drawGen(ctx, pts); return; }
+
     // Sym point, labelled outside the circle
     const hot = this.hover === 'lam' || (this.drag && this.drag.kind === 'lam');
     ctx.fillStyle = accent;
@@ -355,6 +396,22 @@ export class SpectralWidget {
       ctx.fillStyle = accent; ctx.fill();
       ctx.lineWidth = 1.2; ctx.strokeStyle = paper; ctx.stroke();
     }
+  }
+
+  /** Generalized Sym points: blue squares labelled lam_j with the sheet sign. */
+  _drawGen(ctx, pts) {
+    const blue = this._col('--blue', '#3D5A80'), paper = this._col('--paper', '#F2EEE3');
+    const gp = this.gen.lams.map((l) => this._toPx(l));
+    gp.forEach((p, i) => {
+      const hot = this.hover === `gen${i}` || (this.drag && this.drag.kind === 'gen' && this.drag.i === i);
+      const r = hot ? 6 : 5;
+      ctx.fillStyle = blue;
+      ctx.fillRect(p[0] - r, p[1] - r, 2 * r, 2 * r);
+      ctx.lineWidth = 1.2; ctx.strokeStyle = paper;
+      ctx.strokeRect(p[0] - r, p[1] - r, 2 * r, 2 * r);
+      const others = [...pts, ...gp.filter((_, j) => j !== i)];
+      this._label(ctx, 'λ', `${i + 1}${this.gen.signs[i] > 0 ? '+' : '−'}`, p, this._labelDir(p, -1, others), blue, 10);
+    });
   }
 
   _col(name, fallback) {

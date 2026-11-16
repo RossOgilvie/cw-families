@@ -1,9 +1,11 @@
 // Runs the surface computation off the main thread.
-// Message in:  { id, params }   (params as for computeSurface), { id, kind: 'close', params },
+// Message in:  { id, params }   (params as for computeSurface; with params.gen = { lams, signs, projection }
+//              the generalized Sym surface of gensym.js), { id, kind: 'close', params },
 //              or { id, kind: 'family', params: { alphas, smax, maxSteps } } (the Whitham curve)
 // Message out: { id, result } or { id, error }
 
 import { computeSurface, closingInfo } from './cmc/cmc.js';
+import { computeGenSurface } from './cmc/gensym.js';
 import { WhithamCurve } from './cmc/whitham.js';
 
 self.onmessage = (e) => {
@@ -27,6 +29,11 @@ self.onmessage = (e) => {
     return;
   }
   try {
+    if (params.gen) {
+      const r = computeGenSurface({ ...params, ...params.gen });
+      self.postMessage({ id, result: r }, [r.pos.buffer, r.nrm.buffer, r.u.buffer, r.st.buffer, r.pos4.buffer]);
+      return;
+    }
     const r = computeSurface(params);
     self.postMessage({ id, result: r }, [r.pos.buffer, r.nrm.buffer, r.u.buffer, r.st.buffer]);
   } catch (err) {
