@@ -455,32 +455,58 @@ function refreshAlphaValues() {
 // Candidate 1 for the internal tau: computed in its own worker; on success the spectral data, the two
 // generalized Sym points and one cell of the closing lattice are loaded. Editing the spectral data
 // afterwards leaves the candidate (the drawing goes back to the rectangular domain).
-const cand = { worker: null, id: 0, last: null, tau: null };
+const cand = { worker: null, id: 0, last: null, tau: null, busy: false, pending: null, path: null };
 function leaveCandidate() {
   if (!state.cell) return;
   state.cell = null;
+  cand.path = null;
+  showFamily();
   $('candNote').textContent = cand.last ? `${cand.last} (left: the data were edited)` : '';
 }
+// the internal tau in F_6: dragging recomputes candidate 1 (the latest request wins)
+const candPad = new TauPad($('candPad'), (t, dragging) => {
+  $('tauRe').value = fixed(t[0], 4); $('tauIm').value = fixed(t[1], 4);
+  requestCandidate(t);
+});
+candPad.set({ tau: [0.2, 1.3], mode: 'F6' });
+candPad.showAll();
+/** The path of the branch point along the genus 1 edge, for the λ-plane (as the Whitham family). */
+function candidatePath(R) {
+  const pts = R.samples.filter((s) => s.r >= R.event.r).map((s, i) => ({ s: i, alphas: [[-s.r, 0]], W: s.W }));
+  pts.push({ s: pts.length, alphas: [[-R.event.r, 0]], W: R.event.W });
+  return { points: pts, critical: [] };
+}
 function candidateNote(R) {
-  if (!R.event) return `No arrival found on the genus 1 edge (it ended at r = ${fixed(R.end.r, 4)}: ${R.end.why}).`;
+  const order = `Class order ${R.frame.order}: the pair of class ${R.frame.classes.one} is opened.`;
+  if (!R.event) return `${order}\nNo arrival found on the genus 1 edge (it ended at α = −${fixed(R.end.r, 4)}: ${R.end.why}).`;
   const c = (x) => `${fixed(x[0], 4)} ${x[1] < 0 ? '−' : '+'} ${fixed(Math.abs(x[1]), 4)}i`;
-  return `The ${R.event.name === 'tau' ? 'τ' : 'third'} pair arrives at α = −${fixed(R.event.r, 6)} (t = ${fixed(R.event.t, 5)}).\n` +
+  return `${order}\nThe pair of class ${R.event.cls} arrives at α = −${fixed(R.event.r, 6)} (t = ${fixed(R.event.t, 5)}).\n` +
     `W = ${fixed(R.W, 4)} = ${fixed(R.W / PI ** 2, 4)} π²; external τ = ${c(R.tauExt)}` +
     `${R.doubled ? ' (double cover)' : ''}.\nClosing defect ${R.defects.closing.toExponential(1)}; computed in ${R.ms.toFixed(0)} ms.`;
 }
 $('cand1Btn').addEventListener('click', () => {
   const re = parseNum($('tauRe').value), im = parseNum($('tauIm').value);
   if (re === null || im === null || im <= 0) { $('candNote').textContent = 'Internal τ needs Im τ > 0.'; return; }
+  candPad.set({ tau: [re, im], target: null });
+  requestCandidate([re, im]);
+});
+function requestCandidate(tau) {
+  cand.pending = tau;
+  if (cand.busy) return;
+  const t = cand.pending;
+  cand.pending = null;
   if (!cand.worker) {
     cand.worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
     cand.worker.onerror = (e) => { $('cand1Btn').disabled = false; $('candNote').textContent = `worker error: ${e.message}`; };
     cand.worker.onmessage = (e) => {
       const { id, result: R, error } = e.data;
-      if (id !== cand.id) return;
+      cand.busy = false;
       $('cand1Btn').disabled = false;
+      if (cand.pending) requestCandidate(cand.pending);
       if (error) { $('candNote').textContent = error; return; }
       cand.last = candidateNote(R);
       $('candNote').textContent = cand.last;
+      candPad.set({ tau: R.tau, blocked: !R.event });
       if (!R.event) return;
       if (anim) stopAnim();
       state.alphas = R.alphas.map((a) => a.slice());
@@ -488,15 +514,18 @@ $('cand1Btn').addEventListener('click', () => {
       syncTau();
       refreshAll();
       state.cell = R.lattice;
-      needFrame = true;
-      changed(false);
+      cand.path = candidatePath(R);
+      showFamily();
+      if (!cand.pending) needFrame = true;
+      changed(!!cand.pending);
     };
   }
+  cand.busy = true;
   $('cand1Btn').disabled = true;
-  cand.tau = [re, im];
-  $('candNote').textContent = 'Following the genus 1 edge…';
-  cand.worker.postMessage({ id: ++cand.id, kind: 'candidate1', params: { tau: [re, im] } });
-});
+  cand.tau = t;
+  if (!state.cell) $('candNote').textContent = 'Following the genus 1 edge…';
+  cand.worker.postMessage({ id: ++cand.id, kind: 'candidate1', params: { tau: t } });
+}
 
 // generalized Sym points: checkbox, readout, projection
 function refreshGen() {
@@ -872,7 +901,8 @@ const curveToLeafW = () => (whitham.w0 ? frameArea(whitham.w0) : 1) * detA();
 const family = { worker: null, busy: false, pending: null, key: null, data: null };
 const WHITHAM_RANGE = [-1.5, 1.5]; // until the first family arrives
 function showFamily() {
-  widget.set({ family: $('showFamily').checked ? family.data : null });
+  // a candidate shows its path along the edge instead of the Whitham family
+  widget.set({ family: state.cell && cand.path ? cand.path : $('showFamily').checked ? family.data : null });
 }
 // Why the family ends at each end of the slider (from the trace; see WhithamCurve.endReason).
 function endText(e) {

@@ -27,10 +27,10 @@ self.onmessage = (e) => {
       const t0 = performance.now();
       const C = candidate1(params.tau);
       const { edge, event } = C;
-      const out = { tau: C.tau, samples: edge.samples.map(({ r, t, W }) => ({ r, t, W })), end: edge.end, event: null, ms: 0 };
+      const out = { tau: C.tau, frame: C.frame, samples: edge.samples.map(({ r, t, W }) => ({ r, t, W })), end: edge.end, event: null, ms: 0 };
       if (event) {
         Object.assign(out, {
-          event: { name: event.name, r: event.r, t: event.t, W: event.W, lamNode: event.lamNode },
+          event: { name: event.name, cls: event.cls, r: event.r, t: event.t, W: event.W, lamNode: event.lamNode },
           alphas: C.alphas, syms: C.syms, lattice: C.lattice, doubled: C.doubled, chars: C.chars,
           W: C.W, tauExt: C.tauExt, defects: C.defects,
         });

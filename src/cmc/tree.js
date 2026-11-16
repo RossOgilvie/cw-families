@@ -27,6 +27,39 @@ import { leafData, willmoreFrame } from './leaf.js';
 const cmul = ([a, b], [c, d]) => [a * c - b * d, a * d + b * c];
 const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
 
+/**
+ * The shortest vector of each nonzero class of <1, tau> / 2 <1, tau>, with the labels of the tau pad
+ * (classOrder in leaf.js): class 1 = [1] (p odd, q even), 2 = [tau] (p even, q odd), 3 = [1 + tau].
+ * Returns [{ v: [x, y], len, pq: [p, q] }] indexed by class - 1.
+ */
+export function classReps(tau) {
+  const best = [null, null, null];
+  for (let p = -8; p <= 8; p++) for (let q = -8; q <= 8; q++) {
+    const pp = Math.abs(p) % 2, qq = Math.abs(q) % 2;
+    if (!pp && !qq) continue;
+    const c = pp && !qq ? 0 : !pp && qq ? 1 : 2;
+    const v = [p + q * tau[0], q * tau[1]], len = Math.hypot(...v);
+    if (!best[c] || len < best[c].len - 1e-14) best[c] = { v, len, pq: [p, q] };
+  }
+  return best;
+}
+
+/**
+ * The internal tau as a point of F_6 (a lattice with labelled classes): the pair of the shortest class
+ * is opened first, so the lattice is rescaled to put its shortest vector v at 1, and the shortest vector
+ * u of the second class gives the reduced tau1 = u / v (in F_1). The computation runs with tau1, whose
+ * marked vectors one, tau, third are the shortest vectors of the classes classes.one, .tau, .third.
+ * Returns { tau1, classes, order } (order as the pad's labels, e.g. '123').
+ */
+export function internalFrame(tau) {
+  const reps = classReps(tau);
+  const order = [0, 1, 2].sort((a, b) => reps[a].len - reps[b].len);
+  const v = reps[order[0]].v, u = reps[order[1]].v, d = v[0] * v[0] + v[1] * v[1];
+  let tau1 = [(u[0] * v[0] + u[1] * v[1]) / d, (u[1] * v[0] - u[0] * v[1]) / d];
+  if (tau1[1] < 0) tau1 = [-tau1[0], -tau1[1]];
+  return { tau1, classes: { one: order[0] + 1, tau: order[1] + 1, third: order[2] + 1 }, order: order.map((c) => c + 1).join('') };
+}
+
 /** The marked vectors 1, tau, third (the shortest representatives of the nonzero classes of Gamma / 2 Gamma). */
 export function markedVectors(tau) {
   const m = [tau[0] - 1, tau[1]], p = [tau[0] + 1, tau[1]];
@@ -97,7 +130,7 @@ function pairAt(tau, name, r, start) {
  * Options: rMin (stop), factor (step in r), maxEvents.
  * Returns { samples, events: [{ name, r, t, W, P, Q, lamNode }], end: { r, why } }.
  */
-export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.03, factor = 0.97, maxEvents = 1 } = {}) {
+export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, maxEvents = 1 } = {}) {
   const t0 = 1 / Math.PI, names = ['tau', 'third'];
   const mk = markedVectors(tau);
   const lift = (p) => ({ lam: p.lam, nu: cmul(p.nu, [p.lam[0] + 1, p.lam[1]]) });
@@ -106,17 +139,25 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.03, factor = 0.97, m
   const samples = [], events = [];
   let r = rStart, end = { r: rMin, why: 'rMin' };
   const Wint = (rr, t) => Math.abs(willmoreFrame(leafData([[-rr, 0]]), ...torusBasis(t, tau)));
-  let first = true;
+  let first = true, jumped = false;
+  let step = 1 - factor; // relative step in r, halved on failure and grown back after successes
   while (r > rMin) {
-    let next = first ? r : Math.max(rMin, r * factor);
-    first = false;
-    const res = {};
-    let ok = true;
-    for (const n of names) {
-      res[n] = pairAt(tau, n, next, cur[n]);
-      if (!res[n].ok) ok = false;
+    let next, res, ok = false;
+    for (let tries = 0; tries < 8 && !ok; tries++) {
+      next = first ? r : Math.max(rMin, r * (1 - step));
+      res = {};
+      ok = true;
+      for (const n of names) {
+        res[n] = pairAt(tau, n, next, cur[n]);
+        // reject a step on which a point jumps (Newton found another branch)
+        const jump = (a, b) => dist(a.lam, b.lam) > 0.15 * Math.max(0.05, Math.hypot(...b.lam));
+        if (!res[n].ok || (!first && (jump(res[n].P, cur[n].P) || jump(res[n].Q, cur[n].Q)))) ok = false;
+      }
+      if (!ok) step /= 2;
     }
+    first = false;
     if (!ok) { end = { r: next, why: 'continuation failed' }; break; }
+    step = Math.min(1 - factor, step * 1.5);
     // an arrival between r and next: the pair was off and is no longer off
     for (const n of names) {
       if (r !== next && cur[n].cls && cur[n].cls.kind === 'off' && res[n].cls.kind !== 'off') {
@@ -127,9 +168,13 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.03, factor = 0.97, m
         }
         const R = pairAt(tau, n, hi, sHi);
         const mid = [(R.P.lam[0] + R.Q.lam[0]) / 2, (R.P.lam[1] + R.Q.lam[1]) / 2], l = Math.hypot(...mid);
-        events.push({ name: n, r: hi, t: R.t, W: Wint(hi, R.t), P: R.P, Q: R.Q, lamNode: [mid[0] / l, mid[1] / l], gap: dist(R.P.lam, R.Q.lam) });
+        const gap = dist(R.P.lam, R.Q.lam);
+        // an arrival is a sigma-node: the pair must close up (otherwise the branch jumped)
+        if (gap < 1e-2) events.push({ name: n, r: hi, t: R.t, W: Wint(hi, R.t), P: R.P, Q: R.Q, lamNode: [mid[0] / l, mid[1] / l], gap });
+        else { end = { r: hi, why: `the ${n} pair jumped branches (gap ${gap.toFixed(3)})` }; jumped = true; }
       }
     }
+    if (jumped) break;
     for (const n of names) cur[n] = { P: res[n].P, Q: res[n].Q, cls: res[n].cls };
     r = next;
     const t = res.tau.t;
@@ -213,15 +258,20 @@ export function reduceTau([x, y]) {
 export const symPoint = (alphas, lam, nu = null) => ({ lam, nu: nu ?? nuAt(alphas, lam, 1) });
 
 /**
- * Candidate 1 for internal tau: the genus 1 edge to the first arrival (of the tau or the third pair),
- * with the opened branch point alpha and the arriving sigma-node as generalized Sym points.
- * Returns { tau, edge, event, alphas, syms, ...candidate } or { tau, edge, event: null } if none was found.
+ * Candidate 1 for internal tau (any point of the upper half plane, read as F_6): the pair of the shortest
+ * class is opened (internalFrame), then the genus 1 edge is followed to the first arrival (of the second
+ * or third class), with the opened branch point alpha and the arriving sigma-node as generalized Sym points.
+ * Returns { tau, frame, edge, event (with cls, the class label of the arriving pair), alphas, syms,
+ * ...candidate } or { tau, frame, edge, event: null } if none was found.
  */
 export function candidate1(tau, opts = {}) {
-  const edge = genus1Edge(tau, opts);
+  // tau may be any point of the upper half plane (F_6 with labelled classes): normalize first
+  const frame = internalFrame(tau), tau1 = frame.tau1;
+  const edge = genus1Edge(tau1, opts);
   const event = edge.events[0] || null;
-  if (!event) return { tau, edge, event: null };
+  if (!event) return { tau, frame, edge, event: null };
+  event.cls = frame.classes[event.name];
   const alphas = [[-event.r, 0]];
   const syms = [{ lam: alphas[0], nu: [0, 0] }, symPoint(alphas, event.lamNode)];
-  return { tau, edge, event, alphas, syms, ...candidate(alphas, event.t, tau, syms) };
+  return { tau, frame, edge, event, alphas, syms, ...candidate(alphas, event.t, tau1, syms) };
 }

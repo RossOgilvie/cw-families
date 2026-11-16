@@ -136,7 +136,24 @@ export class QMap {
       });
     }
     const base = { lam: this.alphas[0], nu: [0, 0] };
-    const r = this.segment(base, lam);
+    // route around the singular points (0 and the other branch points): a straight segment through one
+    // of them is singular, so go by a waypoint off the segment when it passes close to one
+    const D = csub(lam, base.lam), L = cabs(D);
+    let close = null;
+    for (const e of [[0, 0], ...this.branch]) {
+      if (cabs(csub(e, base.lam)) < 1e-12 || cabs(csub(e, lam)) < 1e-12) continue;
+      const tt = ((e[0] - base.lam[0]) * D[0] + (e[1] - base.lam[1]) * D[1]) / (L * L);
+      if (tt <= 0 || tt >= 1) continue;
+      const foot = cadd(base.lam, [D[0] * tt, D[1] * tt]);
+      if (cabs(csub(foot, e)) < 0.15 * Math.min(L, cabs(csub(e, base.lam)), cabs(csub(e, lam)))) { close = e; break; }
+    }
+    let r;
+    if (close) {
+      // waypoint: the singular point pushed off the segment by a quarter of the segment length
+      const nrm = [-D[1] / L, D[0] / L], w = cadd(close, [0.25 * L * nrm[0], 0.25 * L * nrm[1]]);
+      const r1 = this.segment(base, w), r2 = this.segment({ lam: r1.lam, nu: r1.nu }, lam);
+      r = { nu: r2.nu, dq: [0, 1].map((j) => cadd(r1.dq[j], r2.dq[j])) };
+    } else r = this.segment(base, lam);
     const flip = cabs(csub(r.nu, nu)) > cabs(cadd(r.nu, nu));
     return flip ? r.dq.map(([x, y]) => [-x, -y]) : r.dq;
   }

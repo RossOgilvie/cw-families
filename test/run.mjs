@@ -595,6 +595,17 @@ console.log('the tree: genus 0 edge, opening at lam = -1, genus 1 edge, candidat
   check(`candidate 1: W = ${C.W.toFixed(4)} = ${(C.W / Math.PI ** 2).toFixed(4)} pi^2, twice W on the internal lattice`, Math.abs(C.W - 2 * C.event.W), 1e-8);
   check(`candidate 1: 2 pi^2 < W < 8 pi, external tau = ${C.tauExt.map((x) => x.toFixed(4)).join(' + ')}i in F_1`,
     (C.W > 2 * Math.PI ** 2 && C.W < 8 * Math.PI ? 0 : 1) + (Math.abs(C.tauExt[0]) <= 0.5 && Math.hypot(...C.tauExt) >= 1 ? 0 : 1), 0.5);
+  // near tau = i candidate 1 tends to the Clifford torus (W = 2 pi^2, external tau = i)
+  for (const im of [1.01, 1.001]) {
+    const D = candidate1([0, im]);
+    check(`internal tau = ${im}i: W = ${(D.W / Math.PI ** 2).toFixed(4)} pi^2 -> 2 pi^2 (Clifford), external tau -> i`,
+      Math.abs(D.W / Math.PI ** 2 - 2) + Math.hypot(D.tauExt[0], D.tauExt[1] - 1) > 30 * (im - 1) ? 1 : 0, 0.5);
+  }
+  // F_6: the classes keep their labels; at 0.3 + 0.8i (order 213) the class 2 pair is opened and the class 1 pair arrives
+  {
+    const D = candidate1([0.3, 0.8]);
+    check(`internal tau = 0.3 + 0.8i in F_6: order ${D.frame.order}, arriving class ${D.event && D.event.cls}`, D.frame.order === '213' && D.event && D.event.cls === 1 ? 0 : 1, 0.5);
+  }
   check('reduceTau maps 2.3 + 0.4i into F_1', (() => { const [x, y] = reduceTau([2.3, 0.4]); return Math.abs(x) <= 0.5 && x * x + y * y >= 1 - 1e-12 ? 0 : 1; })(), 0.5);
 }
 
