@@ -13,8 +13,10 @@
 // If given a Whitham family, draws the path of each branch point along it, coloured by the Willmore
 // functional W (blue low, rust high), with a tick across the path at the critical points of W.
 // Labels sit on the side of each point away from the origin and from its own trail.
-// With generalized Sym points on (gen), the two points lam_1, lam_2 (blue squares) replace lam0: they
-// move anywhere in C^*, snap onto the branch points and their reflections, and a double-click flips the
+// With generalized Sym points on (gen), the two points lam_1, lam_2 replace lam0. They are not draggable
+// (they follow from the data): a branch point that is a Sym point is drawn blue, and any other Sym point is
+// a blue square labelled lam_j (on S^1 a sigma-node, elsewhere a point of a pair not yet on S^1). Formerly
+// they moved anywhere in C^*, snapped onto the branch points and their reflections, and a double-click flipped the
 // sheet of one.
 
 const R_VIEW = 1.25;       // half-width of the view in lambda units
@@ -83,13 +85,8 @@ export class SpectralWidget {
   _pick(x, y) {
     const tol = 13;
     let best = null, bd = tol;
-    if (this.gen) {
-      this.gen.lams.forEach((l, i) => {
-        const p = this._toPx(l), d = Math.hypot(p[0] - x, p[1] - y);
-        if (d < bd) { best = { kind: 'gen', i }; bd = d; }
-      });
-      if (best) return best; // the Sym points sit on branch points when snapped: they take precedence
-    } else {
+    // the generalized Sym points are not draggable: they follow from the data (the tree)
+    if (!this.gen) {
       const lp = this._toPx([Math.cos(this.theta0), Math.sin(this.theta0)]);
       const dl = Math.hypot(lp[0] - x, lp[1] - y);
       if (dl < bd) { best = { kind: 'lam' }; bd = dl; }
@@ -145,20 +142,6 @@ export class SpectralWidget {
           this.gen.lams = this.gen.lams.map((l) => (same(l, old) ? this.alphas[d.i].slice()
             : same(l, refl(old)) ? refl(this.alphas[d.i]) : l));
         }
-      } else if (d.kind === 'gen') {
-        let r = Math.hypot(z[0], z[1]);
-        const t = Math.atan2(z[1], z[0]);
-        r = Math.max(0.02, r);
-        let p = [r * Math.cos(t), r * Math.sin(t)];
-        if (!this.noSnap) {
-          const targets = this.alphas.flatMap(([re, im]) => { const r2 = re * re + im * im; return [[re, im], [re / r2, im / r2]]; });
-          const q = this._toPx(p);
-          for (const a of targets) {
-            const pa = this._toPx(a);
-            if (Math.hypot(pa[0] - q[0], pa[1] - q[1]) < 8) { p = a.slice(); break; }
-          }
-        }
-        this.gen.lams[d.i] = p;
       } else if (d.kind === 'lam') {
         this.theta0 = Math.atan2(z[1], z[0]);
         // snap onto a common root of the differentials (hold alt to avoid)
@@ -190,9 +173,7 @@ export class SpectralWidget {
     c.addEventListener('dblclick', (e) => {
       const [x, y] = this._eventPos(e);
       const hit = this._pick(x, y);
-      if (hit && hit.kind === 'gen') {
-        this.gen.signs[hit.i] *= -1;
-      } else if (hit && hit.kind === 'alpha') {
+      if (hit && hit.kind === 'alpha') {
         this.alphas.splice(hit.i, 1);
       } else if (!hit) {
         const z = this._fromPx(x, y);
@@ -367,14 +348,16 @@ export class SpectralWidget {
     // branch points
     const lp = this._toPx([Math.cos(this.theta0), Math.sin(this.theta0)]);
     const pts = this.alphas.map((a) => this._toPx(a));
+    const symBranch = this._symBranches();
+    const blue = this._col('--blue', '#3D5A80');
     pts.forEach((p, i) => {
       const hot = this.hover === `alpha${i}` || (this.drag && this.drag.i === i);
-      ctx.fillStyle = ink;
-      ctx.beginPath(); ctx.arc(p[0], p[1], hot ? 6 : 5, 0, 2 * Math.PI); ctx.fill();
+      ctx.fillStyle = symBranch.has(i) ? blue : ink;
+      ctx.beginPath(); ctx.arc(p[0], p[1], hot ? 6.5 : symBranch.has(i) ? 6 : 5, 0, 2 * Math.PI); ctx.fill();
     });
     pts.forEach((p, i) => {
       const others = [...pts.filter((_, j) => j !== i), lp];
-      this._label(ctx, 'α', String(i + 1), p, this._labelDir(p, i, others), ink, 9);
+      this._label(ctx, 'α', String(i + 1), p, this._labelDir(p, i, others), symBranch.has(i) ? blue : ink, 9);
     });
 
     if (this.gen) { this._drawGen(ctx, pts); return; }
@@ -398,19 +381,39 @@ export class SpectralWidget {
     }
   }
 
-  /** Generalized Sym points: blue squares labelled lam_j with the sheet sign. */
+  /** The branch points (indices) that are generalized Sym points (λ_j at α or at its reflection). */
+  _symBranches() {
+    const out = new Set();
+    if (!this.gen) return out;
+    const near = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-9 * Math.max(1, Math.hypot(...q));
+    this.gen.lams.forEach((l) => this.alphas.forEach((a, i) => {
+      const r2 = a[0] * a[0] + a[1] * a[1];
+      if (near(l, a) || near(l, [a[0] / r2, a[1] / r2])) out.add(i);
+    }));
+    return out;
+  }
+
+  /**
+   * Generalized Sym points that are not branch points (those are drawn as blue branch points): blue
+   * squares, labelled λ_j; on S^1 a σ-node, elsewhere a point of a resonance pair not yet on S^1.
+   */
   _drawGen(ctx, pts) {
     const blue = this._col('--blue', '#3D5A80'), paper = this._col('--paper', '#F2EEE3');
+    const sb = this._symBranches(), onBranch = (l) => this.alphas.some((a, i) => {
+      if (!sb.has(i)) return false;
+      const r2 = a[0] * a[0] + a[1] * a[1];
+      return Math.hypot(l[0] - a[0], l[1] - a[1]) < 1e-9 || Math.hypot(l[0] - a[0] / r2, l[1] - a[1] / r2) < 1e-9;
+    });
     const gp = this.gen.lams.map((l) => this._toPx(l));
     gp.forEach((p, i) => {
-      const hot = this.hover === `gen${i}` || (this.drag && this.drag.kind === 'gen' && this.drag.i === i);
-      const r = hot ? 6 : 5;
+      if (onBranch(this.gen.lams[i])) return;
+      const r = 5;
       ctx.fillStyle = blue;
       ctx.fillRect(p[0] - r, p[1] - r, 2 * r, 2 * r);
       ctx.lineWidth = 1.2; ctx.strokeStyle = paper;
       ctx.strokeRect(p[0] - r, p[1] - r, 2 * r, 2 * r);
       const others = [...pts, ...gp.filter((_, j) => j !== i)];
-      this._label(ctx, 'λ', `${i + 1}${this.gen.signs[i] > 0 ? '+' : '−'}`, p, this._labelDir(p, -1, others), blue, 10);
+      this._label(ctx, 'λ', String(i + 1), p, this._labelDir(p, -1, others), blue, 10);
     });
   }
 

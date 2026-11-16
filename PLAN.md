@@ -152,11 +152,15 @@ Each milestone ends in a check that can be verified.
 11. Interface cleanup (17 November 2026).
    The panels Plane of differentials, Whitham deformation and Isospectral deformation are removed from the page, with their code in app.js (the 𝒲 slider and family, the τ pad of the leaf, the period pad and locks, the domain and isospectral sliders). The modules `whitham.js`, `leaf.js` and `period-pad.js` stay: the tree and the tests use the first two.
    Without a link, the page starts with candidate 2 for internal τ = 0.45 + 0.95i.
+12. Presets, the λ-plane, and dragging along the tree (17 November 2026).
+   Presets: the CMC ones are removed; now the Clifford torus, and candidates by internal τ: 0.45 + 0.95i (candidates 2 and 3), 0.5 + 0.9i (double arrival on Re τ = ½), 0.2 + 1.3i (open end).
+   The generalized Sym formula is always on (no checkbox, no λ₀). The Sym points are not draggable: a branch point that is a Sym point is drawn blue (its α label suffices), any other Sym point is a blue square λ_j (on S^1 a σ-node, elsewhere a point of a pair not yet on S^1). The projection ℝ⁴ → ℝ³ is in Appearance.
+   Dragging a branch point moves along the tree. In genus 2 the curve determines its internal τ and scale t: `locateOnTree` inverts the period ratio ell_2/ell_1 = conj(s τ1 + n) and `internalFrame`, by continuity from the τ at the start of the drag (every genus 2 sample gives back its τ and t to 1e-12; a perturbed curve lies on the edge of its τ). While dragging, candidate 2 of the dragged curve is drawn (its branch points are ripe on the whole edge; the cell has the parity of the tree's candidate 2) and the tree is recomputed for the new τ (without the open-end diagnostics); on release the dot goes to the genus 2 sample at scale t and that sample is drawn. In genus 1 the internal τ is not determined by the curve (it enters only through the resonance lattice), so dragging moves the dot along the genus 1 edge to |α|.
 
 ## TODO
 
 1. Rewrite the README for cw-families: it still describes cmc-immersion (title, controls, layout, the removed panels).
-2. The label of a λ_j overlaps the label of the branch point it sits on.
+2. The label of a λ_j overlaps the label of the branch point it sits on. (Resolved 17 November 2026: a branch point that is a Sym point is drawn blue with its own label only.)
 3. The page title and subtitle ("CMC surfaces") and `about.html` still describe cmc-immersion.
 4. Editing the spectral data leaves the candidate. (The domain sliders were removed with the Plane of differentials, 17 November 2026.)
 5. Headless checks: `chromium --virtual-time-budget` does not finish loading module workers that import other modules, so screenshots of worker results need a real-time wait (a small DevTools-protocol script).
@@ -166,7 +170,7 @@ Next directions (Ross, 16 November 2026):
 1. Unripe data: the immersion formula before the resonance pair reaches S^1. Expected: an immersed plane, equivariant under the lattice (see below), as for Sym–Bobenko without closing conditions.
 2. The immersion all along the tree, from the vacuum to the candidate.
 3. Better visualizations of 4D.
-4. Only the generalized Sym formula is wanted: clean up the λ-plane interface accordingly.
+4. Only the generalized Sym formula is wanted: clean up the λ-plane interface accordingly. (Done, status item 12.)
 5. Precompute curves in F_6 showing where candidates exist and where the edges end at open ends.
 6. A new layout: the screen in four quarters, one with the controls and three with the candidates.
 7. Store the whole tree, for smoother and faster updates under changes of τ (reuse the existing tree, e.g. at open ends), and to see whether candidates jump as τ changes.

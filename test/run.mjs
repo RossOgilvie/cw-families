@@ -12,7 +12,7 @@ import { RootFlow, symData } from '../src/cmc/rootflow.js';
 import { ellipticKE, nodalBoundary, f0, openEndTau } from '../src/cmc/genus2.js';
 import { PairIntegrator, leftEigenvector, nuAt, qmul, qdiv, computeGenSurface } from '../src/cmc/gensym.js';
 import { QMap, genus0Resonance, classifyPair } from '../src/cmc/resonance.js';
-import { genus0Edge, genus1Scale, candidate1, candidate2, genus2Edge, reduceTau, torusBasis, kOf, treeOf, paritySublattice, dualBasis } from '../src/cmc/tree.js';
+import { genus0Edge, genus1Scale, candidate1, candidate2, genus2Edge, reduceTau, torusBasis, kOf, treeOf, paritySublattice, dualBasis, locateOnTree } from '../src/cmc/tree.js';
 import { generator } from '../src/cmc/cmc.js';
 import {
   TauFlow, leafData, periodsOf, rationalPlanes, saturate, reduceFrame, classOrder, nearbyPeriods,
@@ -687,6 +687,22 @@ console.log('the tree: genus 0 edge, opening at lam = -1, genus 1 edge, candidat
     check('double arrival: candidate 2 = candidate 1 (external tau)', Math.hypot(...tE(D.choices[0]).map((x, i) => x - tE(D.c1)[i])), 1e-9);
     check(`just off the wall (0.499 + 0.9i): W and the external taus of the three choices within 4e-3 of the double arrival`,
       Math.max(Math.abs(N.choices[0].W - D.c1.W) / D.c1.W, ...N.choices.map((c, i) => Math.hypot(...c.tauExt.map((x, k) => x - D.choices[i].tauExt[k])))), 4e-3);
+  }
+  // dragging a branch point in genus 2: locateOnTree gives back the internal tau and scale of every sample
+  // of the genus 2 edge, and a perturbed curve lies on the edge of its own tau at its scale (the period
+  // ratio of the edge's curve at that t equals that of the perturbed curve)
+  {
+    const tau = [0.3, 0.8], D = candidate2(tau, { fast: true }), T = treeOf(D), e2 = T.samples.filter((x) => x.edge === 2);
+    const back = Math.max(...e2.map((x) => { const L = locateOnTree(x.alphas, tau); return Math.hypot(L.tau[0] - tau[0], L.tau[1] - tau[1]) + Math.abs(L.t - x.t) / x.t; }));
+    check(`locateOnTree at 0.3 + 0.8i: the ${e2.length} genus 2 samples give back tau and t`, back, 1e-9);
+    const sm = e2[Math.floor(e2.length / 2)], al = sm.alphas.map(([x, y], j) => (j ? [x * 1.03, y + 0.01] : [x, y]));
+    const L = locateOnTree(al, tau), E = candidate2(L.tau, { fast: true }), f2 = treeOf(E).samples.filter((x) => x.edge === 2);
+    // the edge's |alpha_1|, |alpha_2| interpolated in log t at the curve's scale (rotation is a symmetry)
+    const k = f2.findIndex((x, q) => q + 1 < f2.length && x.t >= L.t && f2[q + 1].t <= L.t);
+    const [A, B] = [f2[k], f2[k + 1]], u = Math.log(A.t / L.t) / Math.log(A.t / B.t);
+    const lerp = (j) => Math.exp((1 - u) * Math.log(Math.hypot(...A.alphas[j])) + u * Math.log(Math.hypot(...B.alphas[j])));
+    const err = Math.max(...[0, 1].map((j) => Math.abs(lerp(j) / Math.hypot(...al[j]) - 1)));
+    check(`a perturbed curve (tau -> ${L.tau.map((x) => x.toFixed(4)).join(' + ')}i, t = ${L.t.toFixed(4)}) lies on the genus 2 edge of its tau: |alpha_j| to ${err.toExponential(1)}`, err, 1e-3);
   }
   check('reduceTau maps 2.3 + 0.4i into F_1', (() => { const [x, y] = reduceTau([2.3, 0.4]); return Math.abs(x) <= 0.5 && x * x + y * y >= 1 - 1e-12 ? 0 : 1; })(), 0.5);
 }

@@ -45,7 +45,7 @@ self.onmessage = (e) => {
   if (kind === 'candidate2') {
     try {
       const t0 = performance.now();
-      const C = candidate2(params.tau);
+      const C = candidate2(params.tau, { fast: !!params.fast });
       const c1 = C.c1;
       const out = { tau: C.tau, frame: c1.frame, which: 2, event: null, ms: 0,
         c1: c1.event ? { r: c1.event.r, cls: c1.event.cls, W: c1.W, tauExt: c1.tauExt } : null,

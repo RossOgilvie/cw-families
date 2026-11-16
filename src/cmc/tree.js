@@ -539,17 +539,19 @@ export function candidate2(tau, opts = {}) {
     // distance from a round sphere is O(t^(1/2)), and the S^4 area tends to 2 (x 4 pi))
     if (!edge.openEnd) return { tau, frame: c1.frame, c1, edge, event: null };
     const choices = [];
-    for (const tDraw of opts.drawT || [0.03, 0.01, 0.003, 0.001]) {
+    for (const tDraw of opts.drawT || (opts.fast ? [0.03] : [0.03, 0.01, 0.003, 0.001])) {
       const sm = edge.samples.reduce((b, x) => (Math.abs(Math.log(x.t / tDraw)) < Math.abs(Math.log(b.t / tDraw)) ? x : b));
       if (Math.abs(Math.log(sm.t / tDraw)) > 0.5 || choices.some((ch) => ch.t === sm.t)) continue;
       const al = sm.alphas, k = ellVector(al).map(([x, y]) => [x, -y]);
       const syms = [{ lam: al[0], nu: [0, 0] }, { lam: al[1], nu: [0, 0] }];
       const ch = { pair: ['a1', 'a2'], t: sm.t, alphas: al, syms, ...candidate(al, dualBasis(k[0], k[1]), syms) };
       // the shape, Möbius invariantly, on a coarse uniform grid of one cell (first and last rows coincide)
-      const n = opts.shapeGrid || 36, [l1, l2] = ch.lattice.map((e) => Math.hypot(...e));
-      const S = computeGenSurface({ alphas: al, lams: [al[0], al[1]], cell: ch.lattice, projection: 'drop4',
-        sCoords: Array.from({ length: n }, (_, i) => (i * l1) / (n - 1)), tCoords: Array.from({ length: n }, (_, i) => (i * l2) / (n - 1)) });
-      ch.shape = roundnessS4(S.pos4, n, n);
+      if (!opts.fast) {
+        const n = opts.shapeGrid || 36, [l1, l2] = ch.lattice.map((e) => Math.hypot(...e));
+        const S = computeGenSurface({ alphas: al, lams: [al[0], al[1]], cell: ch.lattice, projection: 'drop4',
+          sCoords: Array.from({ length: n }, (_, i) => (i * l1) / (n - 1)), tCoords: Array.from({ length: n }, (_, i) => (i * l2) / (n - 1)) });
+        ch.shape = roundnessS4(S.pos4, n, n);
+      }
       choices.push(ch);
     }
     return { tau, frame: c1.frame, c1, edge, event: null, openEnd: edge.openEnd, alphas: choices[0].alphas, choices };
@@ -617,7 +619,7 @@ export function treeOf(C, { n0 = 24 } = {}) {
     const p1 = genus0Resonance(kOf(t, mk.one))[0].P, pa = genus0Resonance(kOf(t, mk[a]))[0].P;
     const basis = torusBasis(t, tau1);
     samples.push({ edge: 0, x: i / n0, t, W: 2 / (t * t * tau1[1]), alphas: [],
-      views: [{ key: `one,${a}`, syms: [symOf([], p1), symOf([], pa)], lattice: paritySublattice(basis, par), ripe: false }],
+      views: [{ key: `one,${a}`, syms: [symOf([], p1), symOf([], pa)], lattice: paritySublattice(basis, par), parity: par, ripe: false }],
       node: i === n0 ? 'opening of the pair for 1' : null });
   }
   nodes.push({ index: samples.length - 1, label: 'opening' });
@@ -627,7 +629,7 @@ export function treeOf(C, { n0 = 24 } = {}) {
   for (const sm of s1) {
     const al = [[-sm.r, 0]], pa = sm.pts[a].P;
     samples.push({ edge: 1, x: 1 + Math.log(sm.r) / Math.log(rEnd), t: sm.t, W: 2 * sm.W, alphas: al,
-      views: [{ key: `alpha,${a}`, syms: [{ lam: al[0], sign: 1 }, symOf(al, pa)], lattice: paritySublattice(torusBasis(sm.t, tau1), par), ripe: false }] });
+      views: [{ key: `alpha,${a}`, syms: [{ lam: al[0], sign: 1 }, symOf(al, pa)], lattice: paritySublattice(torusBasis(sm.t, tau1), par), parity: par, ripe: false }] });
   }
   if (ev1 && c1.lattice && C.double) {
     // a double arrival: candidates 1 (= 2), 3 and the other choice on the genus 1 curve (keys double:...)
@@ -653,7 +655,7 @@ export function treeOf(C, { n0 = 24 } = {}) {
       const al = sm.alphas, basis = dualBasis(sm.k[0], sm.k[1]);
       const pts = { a1: { lam: al[0], sign: 1 }, a2: { lam: al[1], sign: 1 }, b: symOf(al, sm.pts.P) };
       samples.push({ edge: 2, x: 2 + Math.log(tA / sm.t) / Math.log(tA / tEnd), t: sm.t, W: 2 * sm.W, alphas: al,
-        views: ['a1,a2', 'a1,b', 'a2,b'].map((key) => ({ key, syms: key.split(',').map((k) => pts[k]), lattice: paritySublattice(basis, parOf[key]), ripe: key === 'a1,a2' })) });
+        views: ['a1,a2', 'a1,b', 'a2,b'].map((key) => ({ key, syms: key.split(',').map((k) => pts[k]), lattice: paritySublattice(basis, parOf[key]), parity: parOf[key], ripe: key === 'a1,a2' })) });
     }
     if (ev2) {
       samples.push({ edge: 2, x: 3, t: ev2.t, W: C.choices[0].W, alphas: C.alphas,
@@ -662,4 +664,35 @@ export function treeOf(C, { n0 = 24 } = {}) {
     } else if (C.openEnd) nodes.push({ index: samples.length - 1, label: 'open end' });
   }
   return { frame, samples, nodes, end: edge2 ? edge2.end : edge1.end };
+}
+
+/**
+ * Where a genus 2 curve near the tree of the internal tau (a point of F_6) lies: its own internal tau
+ * (in F_6) and its scale t = sqrt|alpha_1 alpha_2|, so that it is the point at scale t of the genus 2 edge
+ * of that tau. alphas = [alpha_1, alpha_2] in the order of the edge (alpha_1 from the genus 1 edge, of the
+ * class opened first). The period ratio is ell_2 / ell_1 = conj(s tau1 + n) (genus2Anchor); s and n, and
+ * the class representatives inverting internalFrame, are taken from tau, so this is continuous in the
+ * curve near tau (within its chamber of F_6).
+ * Returns { tau, tau1, t }.
+ */
+export function locateOnTree(alphas, tau) {
+  const fr = internalFrame(tau), reps = classReps(tau);
+  const [o1, o2] = [0, 1, 2].sort((a, b) => reps[a].len - reps[b].len);
+  const [p1, q1] = reps[o1].pq, [p2, q2] = reps[o2].pq;
+  const ell = ellVector(alphas), r = cdivc(ell[1], ell[0]);
+  // tau1' = s (conj(r) - n), in the upper half plane and nearest to tau1
+  let tau1 = null, bd = Infinity;
+  for (const sg of [1, -1]) for (let n = -6; n <= 6; n++) {
+    const c = [sg * (r[0] - n), -sg * r[1]];
+    if (c[1] <= 0) continue;
+    const d = Math.hypot(c[0] - fr.tau1[0], c[1] - fr.tau1[1]);
+    if (d < bd) { bd = d; tau1 = c; }
+  }
+  // internalFrame: tau1 = sigma u / v with u = p2 + q2 tau, v = p1 + q1 tau and sigma = ±1 (Im tau1 > 0)
+  const uv = cdivc([p2 + q2 * tau[0], q2 * tau[1]], [p1 + q1 * tau[0], q1 * tau[1]]), sigma = uv[1] < 0 ? -1 : 1;
+  const w = [sigma * tau1[0], sigma * tau1[1]];
+  // p2 + q2 tau = w (p1 + q1 tau)  =>  tau = (w p1 - p2) / (q2 - w q1)
+  const t2 = cdivc([w[0] * p1 - p2, w[1] * p1], [q2 - w[0] * q1, -w[1] * q1]);
+  const pr = cmul(alphas[0], alphas[1]);
+  return { tau: t2[1] < 0 ? [-t2[0], -t2[1]] : t2, tau1, t: Math.sqrt(Math.hypot(...pr)) };
 }

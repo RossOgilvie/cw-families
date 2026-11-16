@@ -162,16 +162,12 @@
   .genus #genus { min-width: 12px; text-align: center; }
   #lam { width: 100%; aspect-ratio: 1; display: block; touch-action: none; margin: 4px 0 2px; }
   .bprow { display: grid; align-items: center; column-gap: 4px; }
-  .lamrow .sym { font-size: 18px; color: var(--accent); }
   .lab { color: var(--muted); font-style: italic; text-align: right; }
   .bphead { height: 30px; margin-top: 2px; }
-  .genrow { margin: 6px 0 2px 4px; }
   .candrow { display: flex; align-items: center; gap: 6px; margin: 4px 0 6px 4px; }
   .candrow .num { width: 64px; }
   #candNote { white-space: pre-line; }
-  .genrow #genBox { margin: 4px 0 0 22px; display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; }
-  .genrow #genBox[hidden] { display: none; }
-  .genrow #genInfo { grid-column: 1 / -1; font-size: 14px; }
+  #genInfo { font-size: 14px; margin: 6px 0 2px 4px; }
   .bphead i { font-style: italic; }
   .bprow {
     grid-template-columns: 34px 14px 56px 30px 56px 16px 1fr; height: 36px; padding-left: 4px; border-radius: 3px;
@@ -249,30 +245,15 @@
         </span>
       </div>
       <div class="help" id="helpText" hidden>
-        <p>Drag the branch points α (black dots) and the Sym point λ₀ (rust dot). A small rust diamond on the circle marks a common root of the differentials Θ, where λ₀ closes up translationally in every direction; λ₀ snaps onto it. Shift-drag turns everything together. Double-click to add or remove a branch point. The grey rings mark the eigenline divisor at the centre of the domain.</p>
-        <p>With <i>Two Sym points</i> on, the surface is f = Q(u₁ᵀF(λ₁)) Q(u₂ᵀF(λ₂))⁻¹ in ℝ⁴ (the generalized Sym formula), from the eigenlines u<sub>j</sub> of the Killing field at λ<sub>j</sub>. Drag the blue points λ₁, λ₂ anywhere; they snap onto the branch points and their reflections. Double-click one to change its sheet.</p>
+        <p>The surface is f = Q(u₁ᵀF(λ₁)) Q(u₂ᵀF(λ₂))⁻¹ in ℝ⁴ (the generalized Sym formula), from the eigenlines u<sub>j</sub> of the Killing field at two points λ₁, λ₂ of the spectral curve. The Sym points follow from the candidate or the point of the tree: a branch point that is a Sym point is drawn blue, and any other Sym point is a blue square λ<sub>j</sub> (on the unit circle a σ-node, elsewhere a point of a resonance pair not yet on the circle).</p>
+        <p>Drag a branch point to move along the tree. In genus 2 the curve determines the internal τ and the scale t, so the tree is recomputed for that τ and the dot goes to the point at that t; while dragging, candidate 2 of the dragged curve is drawn. In genus 1 the internal τ is not determined by the curve, and dragging moves along the genus 1 edge. Shift-drag turns everything together. Double-click to add or remove a branch point (this leaves the tree).</p>
       </div>
       <canvas id="lam"></canvas>
-      <button class="disc bphead" type="button" aria-expanded="false" aria-controls="bpList"><span class="chev" data-glyph="chev"></span><i>Branch points and Sym point</i></button>
+      <button class="disc bphead" type="button" aria-expanded="false" aria-controls="bpList"><span class="chev" data-glyph="chev"></span><i>Branch points and Sym points</i></button>
       <div id="bpList" hidden>
         <div id="alphaList"></div>
-        <div class="bprow lamrow">
-          <span class="sym">λ<sub>0</sub></span>
-          <span></span><span></span>
-          <label class="lab" for="theta0">arg</label>
-          <input class="num" id="theta0" type="text" inputmode="decimal" autocomplete="off" aria-label="Argument of λ0 in units of π">
-          <span class="muted">π</span>
-          <button class="gly" id="playLam" type="button" data-glyph="play" aria-label="Sweep λ0 around the circle" title="Sweep λ₀ around the circle (associated family)"></button>
-        </div>
       </div>
-      <div class="genrow">
-        <label><input type="checkbox" id="genOn"> Two Sym points λ<sub>1</sub>, λ<sub>2</sub> (immersion in ℝ<sup>4</sup>)</label>
-        <div id="genBox" hidden>
-          <div id="genInfo" class="muted"></div>
-          <label class="lab" for="proj">ℝ<sup>4</sup> → ℝ<sup>3</sup></label>
-          <select id="proj"><option value="auto">automatic</option><option value="balanced">Möbius-balanced</option><option value="pca">principal axes</option><option value="stereo4">stereographic from e₄</option><option value="drop4">drop x₄</option></select>
-        </div>
-      </div>
+      <div id="genInfo" class="muted"></div>
     </div>
   </section>
 
@@ -286,6 +267,8 @@
           <option value="K">Gauss curvature K</option>
           <option value="wire">Wireframe</option>
         </select></div>
+      <div class="frow"><label for="proj">ℝ<sup>4</sup> → ℝ<sup>3</sup></label>
+        <select id="proj"><option value="auto">automatic</option><option value="balanced">Möbius-balanced</option><option value="pca">principal axes</option><option value="stereo4">stereographic from e₄</option><option value="drop4">drop x₄</option></select></div>
       <label class="cb"><input type="checkbox" class="chk" id="grid" checked><span>Draw parameter lines</span></label>
       <div id="appearanceRows"></div>
       <div class="frow"><span>Colours</span>

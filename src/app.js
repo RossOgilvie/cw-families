@@ -6,6 +6,8 @@ import { shapeFlows, kappa0, hopfArg } from './cmc/cmc.js';
 import { commonRootsOnCircle } from './cmc/periods.js';
 import { TauPad } from './tau-pad.js';
 import { TreeView } from './tree-view.js';
+import { locateOnTree, paritySublattice, dualBasis } from './cmc/tree.js';
+import { ellVector } from './cmc/whitham.js';
 
 const $ = (id) => document.getElementById(id);
 const polar = (r, t) => [r * Math.cos(t), r * Math.sin(t)];
@@ -65,34 +67,16 @@ const VIEW_DEFAULTS = {
   gridStep: 0.25, lineW: 0.6, hmax: 0.05, adaptive: false, res: 240,
   // generalized Sym points (cw_candidates.md, F7): the immersion into R^4 from two points of the
   // spectral curve, projected to R^3
-  gen: { on: false, lams: [[0, 1], [0, -1]], signs: [1, 1], proj: 'auto' },
+  gen: { on: true, lams: [[0, 1], [0, -1]], signs: [1, 1], proj: 'auto' },
   // a parallelogram cell [e1, e2] of the closing lattice of a candidate (drawn instead of the domain)
   cell: null,
 };
-// Widths of the rotational examples are exact closing periods of the parallels, pi / sqrt(det X(lam0)).
-// Bubbletons: a double branch point at the k-th resonance point of the cylinder, where its monodromy is ±I.
-const RES = (k) => (k - Math.sqrt(k * k - 1)) ** 2;
+// Presets: the Clifford torus (genus 0, Sym points ±i) as a state, and candidates by their internal tau (k).
 const PRESETS = [
-  { name: 'Round cylinder (g = 0)', s: { alphas: [], theta0: 0, width: PI, height: 10, gridStep: PI / 16 } },
-  { name: 'Unduloid (g = 1)', s: { alphas: [polar(0.45, 0)], theta0: PI, width: 2.90682, height: 14 } },
-  { name: 'Unduloid near a sphere chain', s: { alphas: [polar(0.08, 0)], theta0: PI, width: 1.645512, height: 14, gridStep: 0.1 } },
-  { name: 'Nodoid (g = 1)', s: { alphas: [polar(0.45, 0)], theta0: 0, width: 10, height: 7.663434 } },
-  { name: 'Twizzler (g = 1)', s: { alphas: [polar(0.45, 0)], theta0: PI / 2, width: 8, height: 8 } },
-  { name: 'Bent tube (g = 2)', s: { alphas: [polar(0.49, 1), polar(0.49, -1)], theta0: PI / 2, width: 6, height: 6 } },
-  { name: 'Nearly a cylinder (g = 2)', s: { alphas: [polar(0.85, 0), polar(0.85, PI / 2)], theta0: 0.7, width: 10, height: 10 } },
-  { name: 'Bubbleton, two lobes', s: { alphas: [polar(RES(2), 0), polar(RES(2), 0)], theta0: 0, width: PI, height: 3.4, gridStep: PI / 48, hmax: 0.02, res: 360 } },
-  { name: 'Bubbleton, three lobes', s: { alphas: [polar(RES(3), 0), polar(RES(3), 0)], theta0: 0, width: PI, height: 1.6, gridStep: PI / 60, hmax: 0.02, res: 512 } },
-  { name: 'Bubbleton, four lobes', s: { alphas: [polar(RES(4), 0), polar(RES(4), 0)], theta0: 0, width: PI, height: 1.2, gridStep: PI / 80, hmax: 0.02, res: 512 } },
-  // Wente torus: McIntosh's spectral data (arXiv math/0407248, Remark 1: a = 0.1413 ± 0.1018i), refined
-  // by Newton on the closing conditions. The period lattice of zeta is rhombic, <w1, w2> with w1 = 2.31698
-  // real and 2 w2 - w1 = 4.47988 i; E(w1) turns by 2/3 about an axis, E(2 w2 - w1) = id, so the torus
-  // lattice is <3 w1, w1 + w2>, whose fundamental domain is the brick 3 w1 x (4.47988 / 2).
-  { name: 'Wente torus (three lobes)', s: { alphas: [[0.1412634686, 0.1017768953], [0.1412634686, -0.1017768953]], theta0: 0, width: 6.950948617, height: 2.239937825, gridStep: 6.950948617 / 72, res: 360 } },
-  { name: 'Clifford torus (two Sym points ±i, g = 0)', s: { alphas: [], theta0: 0, width: PI * Math.SQRT2, height: PI * Math.SQRT2, gridStep: PI * Math.SQRT2 / 24, gen: { on: true, lams: [[0, 1], [0, -1]], signs: [1, 1], proj: 'auto' } } },
-  { name: 'Homogeneous torus, ratio 2 (two Sym points, g = 0)', s: { alphas: [], theta0: 0, width: PI / Math.cos(Math.atan(0.5)), height: PI / Math.sin(Math.atan(0.5)), gridStep: PI / Math.cos(Math.atan(0.5)) / 16, gen: { on: true, lams: [[0.6, 0.8], [0.6, -0.8]], signs: [1, 1], proj: 'auto' } } },
-  { name: 'Branch point as a Sym point (g = 1, in R⁴)', s: { alphas: [polar(0.5, 0)], theta0: 0, width: 6, height: 6, gen: { on: true, lams: [polar(0.5, 0), [0, 1]], signs: [1, 1], proj: 'auto' } } },
-  { name: 'Threefold (g = 3)', s: { alphas: [polar(0.4, 0), polar(0.4, 2 * PI / 3), polar(0.4, -2 * PI / 3)], theta0: 0.3, tau: [0], width: 6, height: 6 } },
-  { name: 'Genus 4', s: { alphas: [polar(0.54, 0.38), polar(0.4, PI / 2), polar(0.58, -2.6), polar(0.63, -1.25)], theta0: 1, tau: [0.8, -0.5], width: 6, height: 6 } },
+  { name: 'Clifford torus (genus 0, Sym points ±i)', s: { alphas: [], theta0: 0, width: PI * Math.SQRT2, height: PI * Math.SQRT2, gridStep: PI * Math.SQRT2 / 24, gen: { on: true, lams: [[0, 1], [0, -1]], signs: [1, 1], proj: 'auto' } } },
+  { name: 'Candidates 2 and 3: internal τ = 0.45 + 0.95i', k: [0.45, 0.95, 2] },
+  { name: 'Double arrival on Re τ = ½: internal τ = 0.5 + 0.9i', k: [0.5, 0.9, 2] },
+  { name: 'Open end: internal τ = 0.2 + 1.3i', k: [0.2, 1.3, 2] },
 ];
 
 const state = {
@@ -160,7 +144,7 @@ function readHash() {
     state.alphas = state.alphas.slice(0, MAX_GENUS);
     if (p.has('l')) state.theta0 = +p.get('l') || 0;
     state.tau = nums(p.get('t'));
-    state.gen.on = false;
+    state.gen.on = true;
     state.cell = null;
     if (p.has('y')) {
       const ys = p.get('y').split(';').map(nums);
@@ -375,6 +359,7 @@ const wrapPi = (x) => x - 2 * PI * Math.round(x / (2 * PI));
 // ------------------------------------------------------------------ spectral widget and alpha list
 
 const widget = new SpectralWidget($('lam'), (s, dragging) => {
+  if (treeDrag(s, dragging)) return;
   const gOld = genus();
   state.alphas = s.alphas;
   state.theta0 = s.theta0;
@@ -384,6 +369,59 @@ const widget = new SpectralWidget($('lam'), (s, dragging) => {
   else refreshAlphaValues();
   changed(dragging);
 });
+
+/**
+ * A branch point dragged while a point of the tree is shown moves along the tree. Genus 1: the internal tau
+ * is not determined by the curve, so the dot moves along the genus 1 edge to |alpha|. Genus 2: the curve
+ * determines its internal tau and scale t (locateOnTree, relative to the tau at the start of the drag); the
+ * dragged curve is drawn as candidate 2 (its branch points as Sym points, ripe on the whole edge, on the
+ * cell of the same parity), the tree is recomputed for that tau, and on release the dot goes to the point
+ * of the genus 2 edge at scale t. Returns false when the drag is not a move along the tree.
+ */
+function treeDrag(s, dragging) {
+  const T = cand.tree, sm = T && state.cell ? T.samples[cand.index] : null;
+  if (!sm || sm.edge === 0 || s.alphas.length !== sm.alphas.length || s.alphas.length !== genus()) { cand.dragFrom = null; return false; }
+  if (anim) stopAnim();
+  if (sm.edge === 1) {
+    const r = Math.hypot(...s.alphas[0]);
+    let idx = cand.index, bd = Infinity;
+    T.samples.forEach((x, i) => {
+      if (x.edge !== 1) return;
+      const d = Math.abs(Math.log(Math.hypot(...x.alphas[0]) / r));
+      if (d < bd) { bd = d; idx = i; }
+    });
+    treeView.set({ index: idx });
+    showSample(idx);
+    changed(dragging);
+    return true;
+  }
+  if (!cand.dragFrom) {
+    const ref = T.samples.find((x) => x.edge === 2 && x.views[0].parity);
+    if (!ref) return false;
+    cand.dragFrom = { tau: cand.tau.slice(), parity: ref.views[0].parity };
+  }
+  let L, cell;
+  try {
+    L = locateOnTree(s.alphas, cand.dragFrom.tau);
+    const k = ellVector(s.alphas).map(([x, y]) => [x, -y]);
+    cell = paritySublattice(dualBasis(k[0], k[1]), cand.dragFrom.parity);
+  } catch { return true; }
+  if (!(L.tau[1] > 0) || !cell.flat().every(Number.isFinite)) return true;
+  state.alphas = s.alphas;
+  state.gen = { ...state.gen, on: true, lams: s.alphas.map((a) => a.slice()), signs: [1, 1] };
+  state.cell = cell;
+  refreshGen();
+  refreshAlphaValues();
+  $('tauRe').value = fixed(L.tau[0], 4); $('tauIm').value = fixed(L.tau[1], 4);
+  candPad.set({ tau: L.tau });
+  cand.which = 2;
+  cand.sampleNote = `Dragged: internal τ = ${fixed(L.tau[0], 4)} + ${fixed(L.tau[1], 4)}i, t = ${fixed(L.t, 5)}.\nCandidate 2 (α₁ + α₂) of this curve`;
+  $('treeNote').textContent = cand.sampleNote;
+  requestCandidate(L.tau, { place: L.t, show: !dragging, fast: dragging });
+  if (!dragging) cand.dragFrom = null;
+  changed(dragging);
+  return true;
+}
 
 function genusChanged() {
   syncTau();
@@ -441,7 +479,6 @@ function refreshAlphaValues() {
     if (document.activeElement !== r) r.value = fixed(Math.hypot(re, im), 3);
     if (document.activeElement !== t) t.value = fixed(Math.atan2(im, re) / PI, 3);
   });
-  if (document.activeElement !== $('theta0')) $('theta0').value = fixed(wrapPi(state.theta0) / PI, 3);
 }
 
 // ------------------------------------------------------------------ candidates (tree.js)
@@ -478,7 +515,7 @@ function candidate2Note(R) {
   if (!R.event && R.openEnd) {
     const o = R.openEnd;
     const ext = R.choices[0];
-    const lines = R.choices.map((ch) => `  t = ${ch.t.toExponential(0)}: W/8π = ${fixed(ch.W / (8 * PI), 4)}, distance from a round sphere ${fixed(ch.shape.defect, 3)}, area in S⁴ ${fixed(ch.shape.area, 3)} × 4π`);
+    const lines = R.choices.map((ch) => `  t = ${ch.t.toExponential(0)}: W/8π = ${fixed(ch.W / (8 * PI), 4)}` + (ch.shape ? `, distance from a round sphere ${fixed(ch.shape.defect, 3)}, area in S⁴ ${fixed(ch.shape.area, 3)} × 4π` : ' (shape diagnostics after the drag)'));
     return `${order}\n${one}\nGenus 2: no arrival before the open end (both branch points go to 0, at the scale t).\n` +
       `Followed to t = ${o.t.toExponential(0)}: open-end τ of the rescaled roots = ${c(o.tau)}, the internal τ to ${o.tauError.toExponential(1)}.\n` +
       `Candidate 2 (external τ = ${c(ext.tauExt)}${ext.doubled ? ', double cover' : ''}), read in S⁴ after a Möbius normalization:\n${lines.join('\n')}\n` +
@@ -586,11 +623,17 @@ $('cand1Btn').addEventListener('click', () => {
   candPad.set({ tau: [re, im], target: null });
   requestCandidate([re, im]);
 });
-function requestCandidate(tau) {
-  cand.pending = tau;
+/**
+ * Compute the candidates (and the tree) for internal tau (the latest request wins). opts: place (put the
+ * dot on the genus 2 edge at this scale t), show (false: update the tree and notes but leave the drawn
+ * data alone, while a branch point is dragged), fast (skip the open-end shape diagnostics).
+ */
+function requestCandidate(tau, opts = {}) {
+  cand.pending = { tau, opts };
   if (cand.busy) return;
-  const t = cand.pending;
+  const { tau: t, opts: o } = cand.pending;
   cand.pending = null;
+  cand.inflight = o;
   if (!cand.worker) {
     cand.worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
     cand.worker.onerror = (e) => { $('cand1Btn').disabled = false; $('candNote').textContent = `worker error: ${e.message}`; };
@@ -598,7 +641,8 @@ function requestCandidate(tau) {
       const { id, result: R, error } = e.data;
       cand.busy = false;
       $('cand1Btn').disabled = false; $('cand2Btn').disabled = false;
-      if (cand.pending) requestCandidate(cand.pending);
+      const o = cand.inflight || {};
+      if (cand.pending) requestCandidate(cand.pending.tau, cand.pending.opts);
       if (error) { $('candNote').textContent = error; return; }
       cand.last = R.which === 2 ? candidate2Note(R) : candidateNote(R);
       $('candNote').textContent = cand.last;
@@ -612,12 +656,17 @@ function requestCandidate(tau) {
       const S = cand.tree.samples, nearX = (x) => S.reduce((b, s, i) => (Math.abs(s.x - x) < Math.abs(S[b].x - x) ? i : b), 0);
       const kind = (T) => T.nodes.map((n) => n.label).join();
       let idx;
-      if (prevSm && kind(prev) === kind(cand.tree)) idx = nearX(prevSm.x);
+      if (o.place) {
+        // a dragged genus 2 curve: the point of the genus 2 edge at its scale (clamped to the edge)
+        const e2 = S.map((s, i) => [s, i]).filter(([s]) => s.edge === 2);
+        idx = e2.length ? e2.reduce((b, [s, i]) => (Math.abs(Math.log(s.t / o.place)) < Math.abs(Math.log(S[b].t / o.place)) ? i : b), e2[0][1]) : S.length - 1;
+      } else if (prevSm && kind(prev) === kind(cand.tree)) idx = nearX(prevSm.x);
       else if (R.openEnd) idx = S.reduce((b, s, i) => (s.edge === 2 && Math.abs(Math.log(s.t / 0.01)) < Math.abs(Math.log(S[b].t / 0.01)) ? i : b), S.length - 1);
       else idx = cand.tree.nodes.length ? cand.tree.nodes[cand.tree.nodes.length - 1].index : S.length - 1;
       treeView.set({ index: idx });
+      if (o.show === false) { cand.index = idx; return; }
       showSample(idx);
-      if (!cand.pending) needFrame = true;
+      if (!cand.pending && !o.place) needFrame = true;
       changed(!!cand.pending);
     };
   }
@@ -625,39 +674,19 @@ function requestCandidate(tau) {
   $('cand1Btn').disabled = true; $('cand2Btn').disabled = true;
   cand.tau = t;
   if (!state.cell) $('candNote').textContent = cand.which === 2 ? 'Following the genus 1 and genus 2 edges…' : 'Following the genus 1 edge…';
-  cand.worker.postMessage({ id: ++cand.id, kind: cand.which === 2 ? 'candidate2' : 'candidate1', params: { tau: t } });
+  cand.worker.postMessage({ id: ++cand.id, kind: cand.which === 2 ? 'candidate2' : 'candidate1', params: { tau: t, fast: !!o.fast } });
 }
 
 // generalized Sym points: checkbox, readout, projection
 function refreshGen() {
   const G = state.gen;
-  $('genOn').checked = G.on;
-  $('genBox').hidden = !G.on;
-  const show = ([re, im], s, i) => `λ<sub>${i + 1}</sub> = ${fixed(re, 3)} ${im < 0 ? '−' : '+'} ${fixed(Math.abs(im), 3)}i, sheet ${s > 0 ? '+' : '−'}`;
+  const show = ([re, im], s, i) => `Sym point λ<sub>${i + 1}</sub> = ${fixed(re, 4)} ${im < 0 ? '−' : '+'} ${fixed(Math.abs(im), 4)}i, sheet ${s > 0 ? '+' : '−'}`;
   $('genInfo').innerHTML = G.lams.map((l, i) => show(l, G.signs[i], i)).join('<br>');
   $('proj').value = G.proj;
   widget.set({ gen: G.on ? { lams: G.lams, signs: G.signs } : null });
 }
-$('genOn').addEventListener('change', () => {
-  state.gen.on = $('genOn').checked;
-  if (state.gen.on && state.alphas.length && state.gen.lams.every(([re, im]) => Math.hypot(re, im) > 0.999 && Math.hypot(re, im) < 1.001)) {
-    // a first look: one generalized Sym point at a branch point
-    state.gen.lams = [state.alphas[0].slice(), state.gen.lams[1]];
-  }
-  refreshGen();
-  needFrame = true;
-  changed(false);
-});
 $('proj').addEventListener('change', () => { state.gen.proj = $('proj').value; changed(false); });
 
-$('theta0').addEventListener('change', () => {
-  const v = parseNum($('theta0').value);
-  if (v !== null) state.theta0 = wrapPi(v * PI);
-  widget.set({ theta0: state.theta0 });
-  refreshAlphaValues();
-  changed(false);
-});
-$('theta0').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('theta0').blur(); });
 $('addAlpha').addEventListener('click', () => {
   if (genus() >= MAX_GENUS) return;
   // place the new point where it is well separated from the others
@@ -885,16 +914,10 @@ function animStep(now) {
   if (!anim) return;
   const dt = Math.min(0.1, (now - animLast) / 1000);
   animLast = now;
-  if (anim.key === 'theta0') {
-    state.theta0 = wrapPi(state.theta0 + 0.3 * dt);
-    widget.set({ theta0: state.theta0 });
-    refreshAlphaValues();
-  }
   // only ask for a new surface when the worker has caught up
   if (!busy) changed(true);
   requestAnimationFrame(animStep);
 }
-$('playLam').addEventListener('click', () => toggleAnim({ key: 'theta0' }, $('playLam')));
 
 // ------------------------------------------------------------------ presets and export
 
@@ -905,6 +928,8 @@ presetSel.addEventListener('change', () => {
   const p = PRESETS[+presetSel.value];
   if (!p) return;
   if (anim) stopAnim();
+  presetSel.value = '';
+  if (p.k) { pendingCandidate = p.k; viewer.resetOrientation(); runPendingCandidate(); return; }
   leaveCandidate();
   Object.assign(state, structuredClone(VIEW_DEFAULTS), structuredClone(p.s));
   syncTau();
@@ -988,3 +1013,4 @@ function runPendingCandidate() {
 }
 if (pendingCandidate) runPendingCandidate();
 window.cmcStarted = true; // see index.html
+window.cmcWidget = widget; // for scripted checks (headless drags)
