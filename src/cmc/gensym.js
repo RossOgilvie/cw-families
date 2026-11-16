@@ -370,6 +370,8 @@ function jacobi4(S) {
  *   signs    [s1, s2]               sheets: nu_j = s_j sqrt(lam_j a(lam_j))
  *   phi      grid rotation (default 0)
  *   projection   'auto' (default), 'stereo4' or 'drop4' (see projectPoints)
+ *   cell     optional [e1, e2]: the grid runs along e1 (s) and e2 (t) instead of an orthogonal frame;
+ *            with sCoords in [0, |e1|], tCoords in [0, |e2|] and z0 = 0 it covers the parallelogram
  *
  * Returns { nx, ny, pos4 (Float32 4N), pos, nrm (3N, normals of the projected mesh), u, st, bbox, phi,
  *   us (the eigenvectors), projection (the one used), stats }.
@@ -401,9 +403,15 @@ export function computeGenSurface(params) {
     : Array.from({ length: nx }, (_, i) => -width / 2 + (nx > 1 ? (i * width) / (nx - 1) : 0));
   const t = params.tCoords ? Array.from(params.tCoords)
     : Array.from({ length: ny }, (_, j) => -height / 2 + (ny > 1 ? (j * height) / (ny - 1) : 0));
-  const csr = Math.cos(phi), csi = Math.sin(phi);
-  const ctr = -csi, cti = csr;
-  const w0 = [csr * z0[0] + csi * z0[1], csr * z0[1] - csi * z0[0]];
+  let csr = Math.cos(phi), csi = Math.sin(phi);
+  let ctr = -csi, cti = csr;
+  let w0 = [csr * z0[0] + csi * z0[1], csr * z0[1] - csi * z0[0]];
+  if (params.cell) {
+    // a parallelogram domain: s along e1, t along e2 (coordinates are lengths along them)
+    const [e1, e2] = params.cell, l1 = Math.hypot(...e1), l2 = Math.hypot(...e2);
+    [csr, csi, ctr, cti] = [e1[0] / l1, e1[1] / l1, e2[0] / l2, e2[1] / l2];
+    w0 = [0, 0];
+  }
   const F4 = new Float64Array(4);
 
   const sweep = (ystart, coords, cr, ci, visit) => {

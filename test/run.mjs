@@ -12,6 +12,7 @@ import { RootFlow, symData } from '../src/cmc/rootflow.js';
 import { ellipticKE, nodalBoundary, f0, openEndTau } from '../src/cmc/genus2.js';
 import { PairIntegrator, leftEigenvector, nuAt, qmul, qdiv, computeGenSurface } from '../src/cmc/gensym.js';
 import { QMap, genus0Resonance, classifyPair } from '../src/cmc/resonance.js';
+import { genus0Edge, genus1Scale, candidate1, reduceTau, torusBasis, kOf } from '../src/cmc/tree.js';
 import { generator } from '../src/cmc/cmc.js';
 import {
   TauFlow, leafData, periodsOf, rationalPlanes, saturate, reduceFrame, classOrder, nearbyPeriods,
@@ -573,6 +574,28 @@ console.log('the map q = (log mu_1, log mu_i) and resonance pairs (cw_candidates
       check('g=2: 2 q(alpha_2) = period of B_1 ± B_2 (so q(B) is a half-period)', best, 1e-9);
     }
   }
+}
+
+// ------------------------------------------------------------------ the tree (tree.js)
+console.log('the tree: genus 0 edge, opening at lam = -1, genus 1 edge, candidate 1 (internal tau = 0.2 + 1.3i):');
+{
+  const tau = [0.2, 1.3];
+  const g0 = genus0Edge(tau);
+  check('genus 0: the pair for 1 arrives first, at t = 1/pi, at the sigma-node lam = -1',
+    Math.abs(g0.arrivals[0].t - 1 / Math.PI) + Math.hypot(g0.arrivals[0].lam[0] + 1, g0.arrivals[0].lam[1]) + (g0.arrivals[0].name === 'one' ? 0 : 1), 1e-12);
+  const [w1, w2] = torusBasis(0.3, tau), k1 = kOf(0.3, [1, 0]), k2 = kOf(0.3, tau);
+  check('torus basis dual to (k(1), k(tau))', Math.max(Math.abs(w1[0] * k1[0] + w1[1] * k1[1] - 1), Math.abs(w1[0] * k2[0] + w1[1] * k2[1]),
+    Math.abs(Math.abs(w2[0] * k2[0] + w2[1] * k2[1]) - 1), Math.abs(w2[0] * k1[0] + w2[1] * k1[1])), 1e-12);
+  check('genus 1: the scale t(r) tends to the starting scale 1/pi at the node (r = 1 - 1e-4)', Math.abs(genus1Scale(1 - 1e-4) - 1 / Math.PI), 1e-7);
+  const C = candidate1(tau);
+  check(`candidate 1: the ${C.event && C.event.name} pair arrives (r* = ${C.event && C.event.r.toFixed(6)}, expected 0.092161)`, C.event ? Math.abs(C.event.r - 0.0921606) : 1, 1e-6);
+  check('candidate 1: the arriving sigma-node has monodromy ±I on the internal lattice', C.defects.node, 1e-8);
+  check(`candidate 1: different characters ${JSON.stringify(C.chars)}, so a double cover`, C.doubled ? 0 : 1, 0.5);
+  check('candidate 1: f closes on the doubled lattice', C.defects.closing, 1e-8);
+  check(`candidate 1: W = ${C.W.toFixed(4)} = ${(C.W / Math.PI ** 2).toFixed(4)} pi^2, twice W on the internal lattice`, Math.abs(C.W - 2 * C.event.W), 1e-8);
+  check(`candidate 1: 2 pi^2 < W < 8 pi, external tau = ${C.tauExt.map((x) => x.toFixed(4)).join(' + ')}i in F_1`,
+    (C.W > 2 * Math.PI ** 2 && C.W < 8 * Math.PI ? 0 : 1) + (Math.abs(C.tauExt[0]) <= 0.5 && Math.hypot(...C.tauExt) >= 1 ? 0 : 1), 0.5);
+  check('reduceTau maps 2.3 + 0.4i into F_1', (() => { const [x, y] = reduceTau([2.3, 0.4]); return Math.abs(x) <= 0.5 && x * x + y * y >= 1 - 1e-12 ? 0 : 1; })(), 0.5);
 }
 
 // ------------------------------------------------------------------ timing

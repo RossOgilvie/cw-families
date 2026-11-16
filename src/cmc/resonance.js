@@ -144,11 +144,24 @@ export class QMap {
   /**
    * Solve q(P) - q(Q) = gamma for points P, Q near the given ones, by Newton in (lam_P, lam_Q) with q
    * carried along incrementally (so the sheets and the period ambiguity stay continuous).
-   * P, Q: { lam, nu }; gamma: [g1, g2] complex. Returns { P, Q, qP, qQ, res, iters, ok }.
+   * P, Q: { lam, nu }; gamma: [g1, g2] complex.
+   * lattice: optional generators [k, k'] (vectors of R^2) of Lambda^*, the q-lattice being 2 pi i Lambda^*.
+   * q depends on the base point and on the paths up to this lattice, so a pair is only defined modulo it:
+   * with a lattice, gamma is first moved by the lattice vector nearest to the initial q(P) - q(Q) - gamma.
+   * Returns { P, Q, qP, qQ, gamma (as used), shift ([n, n'] moved by), res, iters, ok }.
    */
-  resonance(P, Q, gamma, { tol = 1e-12, maxIter = 60 } = {}) {
+  resonance(P, Q, gamma, { tol = 1e-12, maxIter = 60, lattice = null } = {}) {
     let p = { lam: P.lam.slice(), nu: P.nu.slice() }, qq = { lam: Q.lam.slice(), nu: Q.nu.slice() };
     let qP = this.q(p.lam, p.nu), qQ = this.q(qq.lam, qq.nu);
+    let shift = [0, 0];
+    if (lattice) {
+      // the imaginary part of the difference, over 2 pi, in the basis of the lattice
+      const d = [0, 1].map((j) => (qP[j][1] - qQ[j][1] - gamma[j][1]) / (2 * Math.PI));
+      const [[a, c], [b, e]] = lattice; // columns k = (a, c), k' = (b, e)
+      const det = a * e - b * c;
+      shift = [Math.round((e * d[0] - b * d[1]) / det), Math.round((a * d[1] - c * d[0]) / det)];
+      gamma = [0, 1].map((j) => [gamma[j][0], gamma[j][1] + 2 * Math.PI * (shift[0] * lattice[0][j] + shift[1] * lattice[1][j])]);
+    }
     const resid = () => [0, 1].map((j) => csub(csub(qP[j], qQ[j]), gamma[j]));
     let r = resid(), nr = Math.max(cabs(r[0]), cabs(r[1])), iters = 0;
     while (nr > tol && iters < maxIter) {
@@ -172,7 +185,7 @@ export class QMap {
       r = resid();
       nr = Math.max(cabs(r[0]), cabs(r[1]));
     }
-    return { P: p, Q: qq, qP, qQ, res: nr, iters, ok: nr <= tol };
+    return { P: p, Q: qq, qP, qQ, gamma, shift, res: nr, iters, ok: nr <= tol };
   }
 }
 
