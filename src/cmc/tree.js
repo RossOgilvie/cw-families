@@ -313,7 +313,10 @@ const csqrtc = ([r, i]) => { const m = Math.hypot(r, i); const sr = Math.sqrt(Ma
 export function genus2Anchor(r, lamNode, tau1, eps = 1e-3) {
   const th0 = Math.atan2(lamNode[1], lamNode[0]);
   const al = ([r1, th]) => [[-r1, 0], [(1 - eps) * Math.cos(th), (1 - eps) * Math.sin(th)]];
-  const ratio = (x) => { const e = ellVector(al(x)); return cdivc(e[1], e[0]); };
+  // ellVector gives each period vector up to sign (cycle orientations): align to the first evaluation, so
+  // that the sign cannot flip between the evaluations of the Newton iteration
+  let ref = null;
+  const ratio = (x) => { const e = ellVector(al(x), ref); if (!ref) ref = e; return cdivc(e[1], e[0]); };
   let x = [r, th0];
   const r0 = ratio(x);
   let target = null, bd = Infinity;

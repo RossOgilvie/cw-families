@@ -15,7 +15,7 @@
 // q is computed by Gauss–Legendre quadrature along straight segments, continuing nu by continuity.
 
 import { aPoly, kappa0 } from './cmc.js';
-import { basicPeriods, thetaPoly } from './periods.js';
+import { basicPeriods, thetaPoly, differentials } from './periods.js';
 import { polyEval } from './poly.js';
 
 const cmul = ([ar, ai], [br, bi]) => [ar * br - ai * bi, ar * bi + ai * br];
@@ -47,13 +47,19 @@ export class QMap {
     const a = aPoly(alphas);
     this.a = Array.from({ length: a.length / 2 }, (_, k) => [a[2 * k], a[2 * k + 1]]);
     this.kap = kappa0(alphas);
-    if (this.g > 0) {
+    const prodAbs = alphas.reduce((acc, [re, im]) => acc * Math.hypot(re, im), 1);
+    if (this.g > 0 && this.g % 2 === 0 && prodAbs < 1e-4) {
+      // near the open ends (all branch points close to 0): the B-cycles and the reality condition
+      // (periods.js), which stay accurate there, whereas the route through all cycles divides by
+      // a_0 ~ t^2. Not near a node on S^1, where the reality condition does not make the A-period of
+      // {alpha, 1/conj alpha} vanish (its real part is then not zero: checked at |alpha| = 0.999).
+      const D = differentials(alphas);
+      this.p = [D.poly([1, 0]), D.poly([0, 1])];
+    } else if (this.g > 0) {
       const P = basicPeriods(alphas);
       this.p = [thetaPoly(alphas, [1, 0], P), thetaPoly(alphas, [0, 1], P)];
-      this.periods = P;
     } else {
       this.p = [thetaPoly(alphas, [1, 0]), thetaPoly(alphas, [0, 1])];
-      this.periods = [];
     }
     // branch points in C^* (0 and infinity are poles of Theta, not usable as base points)
     this.branch = [];
@@ -93,23 +99,34 @@ export class QMap {
     const atStart = cabs(P.nu) < 1e-14;
     const atEnd = this.branch.some((b) => cabs(csub(b, lam1)) < 1e-13 * Math.max(1, cabs(b)));
     const smooth = atStart || atEnd;
-    // number of subintervals: resolve the nearest singular point along the segment (other than the ends
-    // when they are branch points, which the parametrisation takes care of)
-    let dmin = Infinity;
-    for (let s = 1; s < 16; s++) {
-      const t = s / 16, z = cadd(e, [D[0] * t, D[1] * t]);
-      let d = cabs(z);
-      for (const b of this.branch) {
-        if ((atStart && cabs(csub(b, e)) < 1e-13) || (atEnd && cabs(csub(b, lam1)) < 1e-13 * Math.max(1, cabs(b)))) continue;
-        d = Math.min(d, cabs(csub(z, b)));
-      }
-      dmin = Math.min(dmin, d);
+    // a graded mesh in the parameter u: each panel is short compared with its distance to the nearest
+    // singular point (0 and the branch points, other than the ends when they are branch points, which the
+    // parametrisation takes care of), so the panels shrink geometrically towards a nearby singular point
+    // (as when the branch points come close to 0 at the open ends)
+    const sing = [[0, 0], ...this.branch.filter((b) => !((atStart && cabs(csub(b, e)) < 1e-13) || (atEnd && cabs(csub(b, lam1)) < 1e-13 * Math.max(1, cabs(b)))))];
+    const distAt = (u) => {
+      const ph = smooth ? u * u * (3 - 2 * u) : u, z = cadd(e, [D[0] * ph, D[1] * ph]);
+      let d = Infinity;
+      for (const b of sing) d = Math.min(d, cabs(csub(z, b)));
+      return d;
+    };
+    const breaks = [0];
+    for (let u = 0, guard = 0; u < 1 && guard < 20000; guard++) {
+      // the step in lam, L (phi(u + h) - phi(u)) ~ L (phi'(u) h + 3 h^2) for the smooth phi, is at most
+      // 0.15 times the distance to the nearest singular point
+      const c = (0.15 * distAt(u)) / L, dph = smooth ? 6 * u * (1 - u) : 1;
+      const hc = smooth ? (-dph + Math.sqrt(dph * dph + 12 * c)) / 6 : c;
+      const h = Math.min(1 - u, 0.25, Math.max(1e-12, hc));
+      u = 1 - u - h < 1e-12 ? 1 : u + h;
+      breaks.push(u);
     }
-    const m = Math.min(4000, Math.max(smooth ? 4 : 2, Math.ceil((4 * L) / Math.max(dmin, 1e-6))));
+    if (breaks[breaks.length - 1] < 1) breaks.push(1);
+    const m = breaks.length - 1;
     let nuPrev = atStart ? null : P.nu;
     for (let k = 0; k < m; k++) {
+      const u0 = breaks[k], du = breaks[k + 1] - u0;
       for (let q = 0; q < 8; q++) {
-        const t = (k + GL_X[q]) / m, w = GL_W[q] / m;
+        const t = u0 + GL_X[q] * du, w = GL_W[q] * du;
         const ph = smooth ? t * t * (3 - 2 * t) : t, dph = smooth ? 6 * t * (1 - t) : 1;
         const lam = cadd(e, [D[0] * ph, D[1] * ph]), dl = [D[0] * dph, D[1] * dph];
         let nu = csqrt(this.nu2(lam));
