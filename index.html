@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CMC Surfaces from Spectral Data</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/fonts/eb-garamond.css">
+<style>
+  :root {
+    --paper: #F2EEE3; --hover: #E8E2D3; --shade: #EAE4D6; --ink: #27231E; --muted: #6A6257; --rule: #CFC5B0;
+    --accent: #9E3F24; --blue: #3D5A80; --disc: rgba(234, 228, 214, 0.55);
+    --serif: 'EB Garamond', Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--paper); color: var(--ink); display: flex; overflow: hidden;
+    font-family: var(--serif); font-variant-numeric: lining-nums tabular-nums;
+  }
+  #stage { flex: 1 1 auto; position: relative; min-width: 0; }
+  #view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #view:active { cursor: grabbing; }
+  #status {
+    position: absolute; top: 10px; left: 14px; right: 34px; font-size: 15px; font-style: italic;
+    color: var(--muted); pointer-events: none; white-space: pre-wrap;
+  }
+  #status.err { color: #8c2f19; font-style: normal; }
+  #busy {
+    position: absolute; top: 14px; right: 14px; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent); opacity: 0; transition: opacity .2s;
+  }
+  #busy.on { opacity: 0.8; animation: pulse 0.9s ease-in-out infinite alternate; }
+  @keyframes pulse { from { transform: scale(0.6); } to { transform: scale(1); } }
+  #keys {
+    position: absolute; left: 14px; bottom: 10px; font-size: 14.5px; font-style: italic; color: var(--muted);
+    pointer-events: none;
+  }
+
+  /* ---------------------------------------------------------------- panel */
+  #panel {
+    flex: 0 0 360px; height: 100%; overflow-y: auto; box-sizing: border-box; padding: 22px 22px 40px;
+    border-left: 1px solid var(--rule); background: var(--paper); font-size: 17px; line-height: 1.35;
+  }
+  h1 { font-size: 23px; font-weight: 500; font-variant-caps: all-small-caps; letter-spacing: 0.08em; margin: 0; }
+  .sub { font-style: italic; font-size: 15px; color: var(--muted); margin: 2px 0 0; }
+  .note { font-style: italic; font-size: 15.5px; color: var(--muted); margin: 4px 0 0; line-height: 1.35; }
+  .muted { color: var(--muted); }
+  .note:empty { display: none; }
+  #rootNote { white-space: pre-line; }
+  .endrow { display: grid; grid-template-columns: 112px 1fr; column-gap: 10px; font-size: 16px; line-height: 1.3; margin: 3px 0; }
+  .endrow .lab { text-align: left; }
+  .hide { display: none !important; }
+  [hidden] { display: none !important; }
+
+  /* sections: chevron + small-caps header + hairline rule */
+  .sec { margin-top: 22px; }
+  .sech { display: flex; align-items: center; gap: 12px; margin: 0 0 8px; font-size: 19px; font-weight: 500; }
+  .sech::after { content: ''; flex: 1; height: 1px; background: var(--rule); }
+  .sech .disc { font-variant-caps: all-small-caps; letter-spacing: 0.09em; }
+  .disc {
+    background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px; text-align: left;
+  }
+  .disc:hover .chev { color: var(--accent); }
+  .disc:focus-visible { outline: 1px dotted var(--accent); }
+  .chev { display: inline-grid; color: var(--muted); transition: transform 120ms; }
+  .disc[aria-expanded="true"] .chev { transform: rotate(90deg); }
+
+  /* glyph and text buttons: borderless */
+  .gly {
+    background: none; border: 0; color: var(--ink); cursor: pointer; width: 34px; height: 34px; padding: 0;
+    display: inline-grid; place-items: center; border-radius: 50%; flex: 0 0 auto;
+  }
+  .gly:hover { color: var(--accent); background: var(--hover); }
+  .gly.on { color: var(--accent); }
+  .gly:focus-visible, .tbtn:focus-visible { outline: 1px dotted var(--accent); }
+  .tbtn {
+    background: none; border: 0; font: inherit; font-size: 16px; color: var(--ink); cursor: pointer;
+    padding: 4px 7px; border-radius: 3px;
+  }
+  .tbtn:hover { color: var(--accent); background: var(--hover); }
+  button:disabled, input:disabled { opacity: 0.4; cursor: default; }
+  button:disabled:hover { color: var(--ink); background: none; }
+  .btnrow { display: flex; gap: 2px 4px; flex-wrap: wrap; align-items: center; margin: 6px 0 0 -7px; }
+
+  /* sliders: label, track with the value floating over the thumb, action buttons */
+  .sl { display: grid; grid-template-columns: var(--labw, 22px) 1fr auto; align-items: end; column-gap: 8px; height: 46px; }
+  .sl > label { padding-bottom: 5px; white-space: nowrap; }
+  .sl .acts { display: flex; margin-bottom: -5px; }
+  .trk { position: relative; padding-top: 18px; min-width: 0; }
+  .rng {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 24px; background: transparent; margin: 0;
+    cursor: pointer; display: block;
+  }
+  .rng::-webkit-slider-runnable-track { height: 2px; background: linear-gradient(to right, var(--accent) var(--p), var(--rule) var(--p)); }
+  .rng::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--accent);
+    border: 2px solid var(--paper); box-shadow: 0 0 0 1px var(--accent); margin-top: -5.5px; box-sizing: border-box;
+  }
+  .rng::-moz-range-track { height: 2px; background: var(--rule); }
+  .rng::-moz-range-progress { height: 2px; background: var(--accent); }
+  .rng::-moz-range-thumb {
+    width: 13px; height: 13px; border-radius: 50%; background: var(--accent); border: 2px solid var(--paper);
+    box-shadow: 0 0 0 1px var(--accent); box-sizing: border-box;
+  }
+  .rng:focus-visible { outline: 1px dotted var(--accent); outline-offset: 2px; }
+  .tag {
+    position: absolute; top: 0; transform: translateX(-50%); background: none; border: 0; padding: 0 2px;
+    font: inherit; font-size: 14px; color: var(--muted); cursor: text; line-height: 1; white-space: nowrap;
+  }
+  .tag:hover { color: var(--accent); }
+  .tagin { position: absolute; top: -3px; transform: translateX(-50%); width: 72px; text-align: center; font-size: 14px; }
+  .tick { position: absolute; top: 24px; width: 1px; height: 12px; margin-left: -0.5px; background: var(--ink); pointer-events: none; }
+
+  /* number fields: underline only */
+  .num {
+    font: inherit; font-size: 16px; border: 0; border-bottom: 1px solid var(--rule); background: transparent;
+    color: var(--ink); width: 54px; text-align: right; padding: 2px 0; border-radius: 0; min-width: 0;
+  }
+  .num:hover { border-bottom-color: var(--muted); }
+  .num:focus { outline: none; border-bottom-color: var(--accent); }
+
+  /* checkboxes */
+  .cb { display: grid; grid-template-columns: 22px 1fr; align-items: center; column-gap: 8px; min-height: 32px; cursor: pointer; }
+  .chk {
+    -webkit-appearance: none; appearance: none; width: 14px; height: 14px; margin: 0; border: 1.25px solid var(--ink);
+    border-radius: 2px; background: transparent; display: grid; place-content: center; cursor: pointer;
+  }
+  .chk:checked { background: var(--accent); border-color: var(--accent); }
+  .chk:checked::after {
+    content: ''; width: 7px; height: 3.5px; border-left: 1.5px solid var(--paper); border-bottom: 1.5px solid var(--paper);
+    transform: translateY(-1px) rotate(-45deg);
+  }
+  .chk:focus-visible { outline: 1px dotted var(--accent); outline-offset: 2px; }
+
+  /* selects: underline only, with a stroke chevron */
+  select {
+    -webkit-appearance: none; appearance: none; font: inherit; font-size: 16px; color: var(--ink); cursor: pointer;
+    border: 0; border-bottom: 1px solid var(--rule); border-radius: 0; padding: 2px 20px 2px 0; min-width: 0;
+    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%236A6257' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 4px center;
+  }
+  select:hover { border-bottom-color: var(--muted); }
+  select:focus { outline: none; border-bottom-color: var(--accent); }
+  option { background: var(--paper); color: var(--ink); }
+  .frow { display: grid; grid-template-columns: 96px 1fr; align-items: center; column-gap: 8px; min-height: 38px; }
+  .frow > select { width: 100%; }
+
+  /* colour swatches */
+  input[type=color] {
+    -webkit-appearance: none; appearance: none; width: 24px; height: 24px; padding: 0; border: 1px solid var(--rule);
+    border-radius: 50%; background: none; cursor: pointer;
+  }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+  input[type=color]::-webkit-color-swatch { border: none; border-radius: 50%; }
+  input[type=color]::-moz-color-swatch { border: none; border-radius: 50%; }
+  input[type=color]:hover { border-color: var(--accent); }
+  .swatches { display: flex; gap: 10px; align-items: center; }
+
+  /* spectral data */
+  .specbar { display: flex; align-items: center; justify-content: space-between; }
+  .specbar .disc { font-style: italic; color: var(--muted); font-size: 15.5px; }
+  .genus { display: flex; align-items: center; }
+  .genus #genus { min-width: 12px; text-align: center; }
+  #lam { width: 100%; aspect-ratio: 1; display: block; touch-action: none; margin: 4px 0 2px; }
+  .bprow { display: grid; align-items: center; column-gap: 4px; }
+  .lamrow .sym { font-size: 18px; color: var(--accent); }
+  .lab { color: var(--muted); font-style: italic; text-align: right; }
+  .bphead { height: 30px; margin-top: 2px; }
+  .bphead i { font-style: italic; }
+  .bprow {
+    grid-template-columns: 34px 14px 56px 30px 56px 16px 1fr; height: 36px; padding-left: 4px; border-radius: 3px;
+  }
+  .bprow .name { font-size: 18px; }
+  .bprow .gly { justify-self: end; }
+  sub { font-size: 0.68em; line-height: 0; }
+
+  #symPad, #tauPad { width: 100%; max-width: 290px; aspect-ratio: 1; display: block; margin: 2px auto 0; touch-action: none; }
+  #tauPad { margin-top: 10px; }
+  #tauPadNote, #dpNote { white-space: pre-line; }
+  #periodPad { width: 100%; max-width: 290px; aspect-ratio: 1; display: block; margin: 2px auto 0; touch-action: none; }
+  #dpHover { min-height: 1.35em; }
+  #dpHover:empty { display: block; }
+  #sizeRows { --labw: 50px; }
+  #phiRow { --labw: 50px; }
+  #appearanceRows { --labw: 96px; }
+  #rescaleInfo { display: block; }
+
+  .help p { margin: 4px 0 6px; font-size: 15.5px; font-style: italic; color: var(--muted); }
+  .more { text-decoration: none; font-variant-caps: all-small-caps; letter-spacing: 0.09em; }
+  .more:hover { color: var(--accent); }
+  .more .arr { font-variant-caps: normal; letter-spacing: 0; }
+
+  @media (max-width: 840px) {
+    html, body { height: auto; min-height: 100%; }
+    body { flex-direction: column; overflow: auto; }
+    #stage { flex: none; height: 62vh; min-height: 320px; }
+    #panel { flex: none; height: auto; overflow: visible; border-left: none; border-top: 1px solid var(--rule); padding: 14px 16px 48px; }
+    #lam { max-width: 360px; margin: 4px auto 0; }
+    #keys { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="view"></canvas>
+  <div id="status"></div>
+  <div id="busy"></div>
+  <div id="keys">Drag: rotate · shift-drag: roll · wheel / ±: zoom · WASD QE: move · F: frame · R: reset</div>
+</div>
+
+<aside id="panel">
+  <h1>CMC surfaces</h1>
+  <p class="sub">Immersions of the plane with constant mean curvature, built from spectral data by integrating polynomial Killing fields.</p>
+
+  <section class="sec">
+    <h2 class="sech"><button class="disc" type="button" aria-expanded="false" aria-controls="bodyH"><span class="chev" data-glyph="chev"></span>Mean curvature</button></h2>
+    <div class="secbody" id="bodyH">
+      <div id="Hrow"></div>
+      <label class="cb"><input type="checkbox" class="chk" id="autoH"><span>Set <i>H</i> = 1 / min |α − λ<sub>0</sub>|</span></label>
+      <label class="cb"><input type="checkbox" class="chk" id="autoHDomain" checked><span>Enlarge the domain with it</span></label>
+      <p class="note" id="HNote"></p>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="bodySpec"><span class="chev" data-glyph="chev"></span>Spectral data</button></h2>
+    <div class="secbody" id="bodySpec">
+      <div class="specbar">
+        <button class="disc" type="button" aria-expanded="false" aria-controls="helpText"><span class="chev" data-glyph="chev"></span>How to use</button>
+        <span class="genus">Genus
+          <button class="gly" id="remAlpha" type="button" data-glyph="minus" aria-label="Decrease genus (removes the last branch point)" title="Remove the last branch point"></button>
+          <span id="genus"></span>
+          <button class="gly" id="addAlpha" type="button" data-glyph="plus" aria-label="Increase genus (adds a branch point)" title="Add a branch point"></button>
+        </span>
+      </div>
+      <div class="help" id="helpText" hidden>
+        <p>Drag the branch points α (black dots) and the Sym point λ₀ (rust dot). A small rust diamond on the circle marks a common root of the differentials Θ, where λ₀ closes up translationally in every direction; λ₀ snaps onto it. Shift-drag turns everything together. Double-click to add or remove a branch point. The grey rings mark the eigenline divisor at the centre of the domain.</p>
+      </div>
+      <canvas id="lam"></canvas>
+      <button class="disc bphead" type="button" aria-expanded="false" aria-controls="bpList"><span class="chev" data-glyph="chev"></span><i>Branch points and Sym point</i></button>
+      <div id="bpList" hidden>
+        <div id="alphaList"></div>
+        <div class="bprow lamrow">
+          <span class="sym">λ<sub>0</sub></span>
+          <span></span><span></span>
+          <label class="lab" for="theta0">arg</label>
+          <input class="num" id="theta0" type="text" inputmode="decimal" autocomplete="off" aria-label="Argument of λ0 in units of π">
+          <span class="muted">π</span>
+          <button class="gly" id="playLam" type="button" data-glyph="play" aria-label="Sweep λ0 around the circle" title="Sweep λ₀ around the circle (associated family)"></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="dpBox"><span class="chev" data-glyph="chev"></span>Plane of differentials</button></h2>
+    <div class="secbody" id="dpBox">
+      <canvas id="periodPad" aria-label="The plane of differentials, with integer period vectors near it; click one to lock it in" title="Click a point to move the curve so that the plane passes through it (locked in, rust ring); a second point makes the data doubly periodic; click a locked point to release it. The wheel zooms, shift-drag pans, double-click fits."></canvas>
+      <p class="note" id="dpHover"></p>
+      <button class="disc bphead" type="button" aria-expanded="true" aria-controls="dpInfo"><span class="chev" data-glyph="chev"></span><i>Lattice and domain</i></button>
+      <div id="dpInfo">
+        <p class="note" id="dpNote"></p>
+        <div id="sizeRows"></div>
+        <label class="cb"><input type="checkbox" class="chk" id="curv" checked><span>Align grid with curvature lines</span></label>
+        <div id="phiRow"></div>
+        <div class="btnrow">
+          <button class="tbtn" id="rescaleBtn" type="button" title="Resize the domain (keeping its centre and angle) to the smallest rectangle enclosing the parallelogram of w₁, w₂: a whole period cell. Needs a lattice.">Rescale domain to lattice</button>
+        </div>
+        <span class="note" id="rescaleInfo"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="whithamBox"><span class="chev" data-glyph="chev"></span>Whitham deformation</button></h2>
+    <div class="secbody" id="whithamBox">
+      <div id="whithamRow"></div>
+      <div class="btnrow"><button class="tbtn" id="toRoot" type="button" title="Move along the family to the critical point of 𝒲, where the differentials have a common root on the unit circle, and put λ₀ there">Flow to common root</button></div>
+      <div class="endrow"><span class="lab">Left endpoint</span><span id="endL"></span></div>
+      <div class="endrow"><span class="lab">Right endpoint</span><span id="endR"></span></div>
+      <canvas id="tauPad" aria-label="τ, with ψ = Σ logit|α| fixed; drag to move along the leaf" title="Drag to move τ with ψ = Σ logit|α| fixed. The wheel zooms, shift-drag pans, double-click shows all of F₆."></canvas>
+      <p class="note" id="tauPadNote"></p>
+      <label class="cb"><input type="checkbox" class="chk" id="showFamily" checked><span>Show the family in the λ-plane</span></label>
+      <label class="cb"><input type="checkbox" class="chk" id="whithamDomain" checked><span>Carry the domain along</span></label>
+      <p class="note" id="whithamNote"></p>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2 class="sech"><button class="disc" type="button" aria-expanded="false" aria-controls="rootBox"><span class="chev" data-glyph="chev"></span>Root-preserving flow</button></h2>
+    <div class="secbody" id="rootBox" hidden>
+      <canvas id="symPad" aria-label="Sym integrals (φ₁, φ₂); drag to move along the flow" title="Drag to move along the flow. Genus 4 and up: the wheel zooms, shift-drag pans."></canvas>
+      <label class="cb"><input type="checkbox" class="chk" id="rootDomain" checked><span>Carry the domain along</span></label>
+      <p class="note" id="rootNote"></p>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2 class="sech"><button class="disc" type="button" aria-expanded="false" aria-controls="tauBox"><span class="chev" data-glyph="chev"></span>Isospectral deformation</button></h2>
+    <div class="secbody" id="tauBox" hidden>
+      <div id="centreRows"></div>
+      <div id="tauList"></div>
+      <label class="cb"><input type="checkbox" class="chk" id="showDivisor"><span>Show the eigenline divisor in the λ-plane</span></label>
+      <p class="note" id="tauNote"></p>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="bodyLook"><span class="chev" data-glyph="chev"></span>Appearance</button></h2>
+    <div class="secbody" id="bodyLook">
+      <div class="frow"><label for="colour">Texture</label>
+        <select id="colour">
+          <option value="side">Two-sided</option>
+          <option value="u">Conformal factor u</option>
+          <option value="K">Gauss curvature K</option>
+          <option value="wire">Wireframe</option>
+        </select></div>
+      <label class="cb"><input type="checkbox" class="chk" id="grid" checked><span>Draw parameter lines</span></label>
+      <div id="appearanceRows"></div>
+      <div class="frow"><span>Colours</span>
+        <span class="swatches">
+          <input type="color" id="front" title="The side N points to (mean-convex side)" aria-label="Front colour" value="#6f8fb0">
+          <input type="color" id="back" title="The other side" aria-label="Back colour" value="#e8c9a0">
+          <input type="color" id="bg" title="Background" aria-label="Background colour" value="#f2eee3">
+        </span></div>
+      <div class="frow"><label for="res">Resolution</label>
+        <select id="res">
+          <option value="96">96</option><option value="160">160</option>
+          <option value="240" selected>240</option><option value="360">360</option><option value="512">512</option>
+        </select></div>
+      <label class="cb"><input type="checkbox" class="chk" id="adapt" checked><span>Adapt the mesh to the metric</span></label>
+      <div class="frow"><label for="acc">Accuracy</label>
+        <select id="acc">
+          <option value="0.1">Fast (h ≤ 0.1)</option>
+          <option value="0.05" selected>Normal (h ≤ 0.05)</option>
+          <option value="0.02">High (h ≤ 0.02)</option>
+          <option value="adaptive">Adaptive (error-controlled)</option>
+        </select></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="bodyPresets"><span class="chev" data-glyph="chev"></span>Presets &amp; export</button></h2>
+    <div class="secbody" id="bodyPresets">
+      <div class="frow"><label for="preset">Preset</label><select id="preset"></select></div>
+      <div class="btnrow">
+        <button class="tbtn" id="viewReset" type="button" title="Reset the rotation and frame the surface (R)">Reset view</button>
+        <button class="tbtn" id="frameBtn" type="button" title="Frame the surface (F)">Frame</button>
+        <button class="tbtn" id="pngBtn" type="button" title="Save a screenshot">PNG</button>
+        <button class="tbtn" id="objBtn" type="button" title="Save the mesh">OBJ</button>
+        <button class="tbtn" id="linkBtn" type="button">Copy link</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec about">
+    <h2 class="sech"><a class="disc more" href="about.html" target="_blank" rel="noopener" title="How the surfaces are computed, in a new tab">Learn more<span class="arr" aria-hidden="true">→</span></a></h2>
+  </section>
+</aside>
+
+<script>
+  // If the app fails to start (for instance a stale cached module mixed with updated ones after an
+  // edit or deploy), say so instead of leaving a half-empty page. app.js sets cmcStarted when done.
+  function cmcFailed(msg) {
+    if (window.cmcStarted) return;
+    const s = document.getElementById('status');
+    s.classList.add('err');
+    s.textContent = 'The page failed to start' + (msg ? ': ' + msg : '') + '. If the files were just updated, '
+      + 'the browser may be mixing in stale cached copies: reload with Ctrl+Shift+R (Cmd+Shift+R on a Mac).';
+  }
+  window.addEventListener('error', (e) => cmcFailed(e.message));
+</script>
+<script type="module" src="src/app.js" onerror="cmcFailed('could not load src/app.js')"></script>
+</body>
+</html>
