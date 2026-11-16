@@ -72,6 +72,8 @@ const VIEW_DEFAULTS = {
   // generalized Sym points (cw_candidates.md, F7): the immersion into R^4 from two points of the
   // spectral curve, projected to R^3
   gen: { on: false, lams: [[0, 1], [0, -1]], signs: [1, 1], proj: 'auto' },
+  // a parallelogram cell [e1, e2] of the closing lattice of a candidate (drawn instead of the domain)
+  cell: null,
 };
 // Widths of the rotational examples are exact closing periods of the parallels, pi / sqrt(det X(lam0)).
 // Bubbletons: a double branch point at the k-th resonance point of the cylinder, where its monodromy is ±I.
@@ -113,12 +115,16 @@ function syncTau() {
 }
 
 // ------------------------------------------------------------------ links
+
+let pendingCandidate = null; // internal tau from a link #k=re,im: candidate 1 is computed on start
 // The state goes into the URL only through "Copy link". A page opened from such a link (or with one
 // pasted into its address bar) takes the state from the hash and then clears it from the address bar.
 
 const fmt = (x, d = 4) => String(+x.toFixed(d));
 function linkURL() {
   const p = new URLSearchParams();
+  // a candidate is recomputed from its internal tau
+  if (state.cell && cand.tau) return `${location.origin}${location.pathname}${location.search}#k=${cand.tau.map((x) => fmt(x, 10)).join(',')}`;
   p.set('a', state.alphas.map(([re, im]) => `${fmt(re, 10)},${fmt(im, 10)}`).join(';'));
   p.set('l', fmt(state.theta0, 10));
   if (state.tau.length) p.set('t', state.tau.map((x) => fmt(x)).join(','));
@@ -147,6 +153,11 @@ function snapLinkLam() {
 }
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
+  if (p.has('k')) {
+    const k = (p.get('k') || '').split(',').map(Number);
+    if (k.length === 2 && k.every(Number.isFinite) && k[1] > 0) pendingCandidate = k;
+    return false;
+  }
   if (!p.has('a')) return false;
   const nums = (s) => (s || '').split(',').filter((x) => x !== '').map(Number);
   try {
@@ -156,6 +167,7 @@ function readHash() {
     if (p.has('l')) state.theta0 = +p.get('l') || 0;
     state.tau = nums(p.get('t'));
     state.gen.on = false;
+    state.cell = null;
     if (p.has('y')) {
       const ys = p.get('y').split(';').map(nums);
       if (ys.length === 2 && ys.every((v) => v.length === 3 && v.every(Number.isFinite))) {
@@ -198,7 +210,7 @@ function gridDims(res) {
 
 // everything that determines the surface (not the mesh or the accuracy)
 const surfaceKey = () => JSON.stringify([state.alphas, state.theta0, state.tau, state.z0,
-  state.curv ? null : state.phi, state.width, state.height, state.gen.on ? state.gen : null]);
+  state.curv ? null : state.phi, state.width, state.height, state.gen.on ? state.gen : null, state.cell]);
 
 function params(full) {
   const [nx, ny] = gridDims(full ? state.res : 72);
@@ -208,6 +220,16 @@ function params(full) {
     nx, ny, hmax: full ? state.hmax : Math.max(state.hmax, 0.1),
   };
   if (state.gen.on) p.gen = { lams: state.gen.lams, signs: state.gen.signs, projection: state.gen.proj };
+  if (state.gen.on && state.cell) {
+    // one cell of the closing lattice of a candidate, uniformly sampled (the first and last rows and
+    // columns coincide on the torus)
+    const [e1, e2] = state.cell, l1 = Math.hypot(...e1), l2 = Math.hypot(...e2), m = Math.max(l1, l2);
+    const res = full ? state.res : 72;
+    const n1 = Math.max(3, Math.round((res * l1) / m)), n2 = Math.max(3, Math.round((res * l2) / m));
+    Object.assign(p, { cell: state.cell, z0: [0, 0], phi: 0,
+      sCoords: Array.from({ length: n1 }, (_, i) => (i * l1) / (n1 - 1)), tCoords: Array.from({ length: n2 }, (_, j) => (j * l2) / (n2 - 1)) });
+    return p;
+  }
   // error-controlled steps for the full mesh: on request, or when the preview shows the conformal factor
   // bubbling (near the corner of the spectral data where the branch points go to 0, fixed steps lose it)
   // (the latest result stands in for the preview while the data move, e.g. along a flow)
@@ -361,6 +383,7 @@ const widget = new SpectralWidget($('lam'), (s, dragging) => {
   state.alphas = s.alphas;
   state.theta0 = s.theta0;
   if (s.gen) { state.gen.lams = s.gen.lams; state.gen.signs = s.gen.signs; refreshGen(); }
+  leaveCandidate();
   if (genus() !== gOld) genusChanged();
   else refreshAlphaValues();
   changed(dragging);
@@ -426,6 +449,54 @@ function refreshAlphaValues() {
   });
   if (document.activeElement !== $('theta0')) $('theta0').value = fixed(wrapPi(state.theta0) / PI, 3);
 }
+
+// ------------------------------------------------------------------ candidates (tree.js)
+
+// Candidate 1 for the internal tau: computed in its own worker; on success the spectral data, the two
+// generalized Sym points and one cell of the closing lattice are loaded. Editing the spectral data
+// afterwards leaves the candidate (the drawing goes back to the rectangular domain).
+const cand = { worker: null, id: 0, last: null, tau: null };
+function leaveCandidate() {
+  if (!state.cell) return;
+  state.cell = null;
+  $('candNote').textContent = cand.last ? `${cand.last} (left: the data were edited)` : '';
+}
+function candidateNote(R) {
+  if (!R.event) return `No arrival found on the genus 1 edge (it ended at r = ${fixed(R.end.r, 4)}: ${R.end.why}).`;
+  const c = (x) => `${fixed(x[0], 4)} ${x[1] < 0 ? '−' : '+'} ${fixed(Math.abs(x[1]), 4)}i`;
+  return `The ${R.event.name === 'tau' ? 'τ' : 'third'} pair arrives at α = −${fixed(R.event.r, 6)} (t = ${fixed(R.event.t, 5)}).\n` +
+    `W = ${fixed(R.W, 4)} = ${fixed(R.W / PI ** 2, 4)} π²; external τ = ${c(R.tauExt)}` +
+    `${R.doubled ? ' (double cover)' : ''}.\nClosing defect ${R.defects.closing.toExponential(1)}; computed in ${R.ms.toFixed(0)} ms.`;
+}
+$('cand1Btn').addEventListener('click', () => {
+  const re = parseNum($('tauRe').value), im = parseNum($('tauIm').value);
+  if (re === null || im === null || im <= 0) { $('candNote').textContent = 'Internal τ needs Im τ > 0.'; return; }
+  if (!cand.worker) {
+    cand.worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+    cand.worker.onerror = (e) => { $('cand1Btn').disabled = false; $('candNote').textContent = `worker error: ${e.message}`; };
+    cand.worker.onmessage = (e) => {
+      const { id, result: R, error } = e.data;
+      if (id !== cand.id) return;
+      $('cand1Btn').disabled = false;
+      if (error) { $('candNote').textContent = error; return; }
+      cand.last = candidateNote(R);
+      $('candNote').textContent = cand.last;
+      if (!R.event) return;
+      if (anim) stopAnim();
+      state.alphas = R.alphas.map((a) => a.slice());
+      state.gen = { ...state.gen, on: true, lams: R.syms.map((s) => s.lam.slice()), signs: [1, 1] };
+      syncTau();
+      refreshAll();
+      state.cell = R.lattice;
+      needFrame = true;
+      changed(false);
+    };
+  }
+  $('cand1Btn').disabled = true;
+  cand.tau = [re, im];
+  $('candNote').textContent = 'Following the genus 1 edge…';
+  cand.worker.postMessage({ id: ++cand.id, kind: 'candidate1', params: { tau: [re, im] } });
+});
 
 // generalized Sym points: checkbox, readout, projection
 function refreshGen() {
@@ -1481,6 +1552,7 @@ function refreshAll() {
 window.addEventListener('hashchange', () => {
   const ok = readHash();
   clearHash();
+  if (pendingCandidate) { runPendingCandidate(); return; }
   if (!ok) return;
   snapLinkLam();
   if (anim) stopAnim();
@@ -1498,4 +1570,10 @@ refreshAll();
 saveHomeDomain();
 setBackground(state.bg);
 changed(false);
+function runPendingCandidate() {
+  $('tauRe').value = String(pendingCandidate[0]); $('tauIm').value = String(pendingCandidate[1]);
+  pendingCandidate = null;
+  $('cand1Btn').click();
+}
+if (pendingCandidate) runPendingCandidate();
 window.cmcStarted = true; // see index.html

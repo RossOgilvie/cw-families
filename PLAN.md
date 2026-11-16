@@ -93,13 +93,25 @@ Each milestone ends in a check that can be verified.
    Resonance pairs: Newton in (λ_P, λ_Q) with q carried along incrementally; `genus0Resonance` (closed form: ν_P − ν_Q = 2πi k, ν_P ν_Q = k/conj(k), over S^1 if and only if |k| ≤ 1/π); `classifyPair` (off, on, node, with a signed distance to arrival).
    In this normalization the torus lattice Λ is in the z-plane and γ = 2πi (k_1, k_2) with k ∈ Λ^*; the sketch's Γ is 2πi Λ^*, so its scale is that of Λ.
    Tests: in genus 0, q equals the eigenvalues of X(λ) on the eigenline used by `gensym.js` (both sheets), the closed forms, Newton, the threshold and classification; in genus 1 and 2, Re q = 0 and q(α) = q(1/conj α) at branch points, and 2q(α_2) is a period of B_1 ± B_2.
-   Still to do: continuing marked pairs along a deformation of the curve (with the edges, milestones 3 and 4).
+   Continuing marked pairs along a deformation of the curve is done with the genus 1 edge (item 3), using the lattice reduction of `resonance()`.
+3. Milestones 3–5 for candidate 1 done (November 2026): `src/cmc/tree.js`.
+   Design: the internal τ is an input of every function (and the solvers take warm starts), so that the tree can later be recomputed along a path of τ; the external τ of a candidate is derived and reported.
+   Conventions: Λ^* = t i ⟨1, τ⟩; the factor i puts the σ-node of the pair for 1 at λ = −1, where the opened genus 1 curves α = −r continue ν^2 = −λ without rotating the z-plane (at a double root λ_0 the nodal curve normalizes to ν^2 = conj(λ_0) λ).
+   Genus 0 edge in closed form (W = area of Λ = 1/(t^2 Im τ), arrivals at π|k| = 1, the σ-node at λ = π^2 k^2).
+   Genus 1 edge: t(r) from the B-period, the τ and third pairs continued from their genus 0 positions (ν_1 = ν_0 (λ + 1) at the node), arrivals refined by bisection.
+   Candidates: monodromy characters at both Sym points by shooting, the closing lattice (doubled when they differ), W by the residue formula on it, the external τ, and a closing check.
+   In the app: the *Candidates* section (internal τ, *Find candidate 1*), computed in a worker, loads the curve, the two Sym points and one cell of the closing lattice; a link `#k=Re,Im` recomputes it.
+   Result for internal τ = 0.2 + 1.3i: the τ pair arrives at α = −0.092161; the node has monodromy ±I; the characters differ, so the torus closes on the doubled lattice (to 2e-10); W = 23.5632 = 2.3874 π^2; external τ = −0.3133 + 1.1159i.
+   A finite-difference W of the drawn torus converges towards the residue value (24.84, 24.05, 23.82, 23.67 at 48, 72, 96, 144 points per side).
+   Open: the genus 1 continuation fails below r ≈ 0.05 (the α → 0 corner); after an arrival the coarse steps can jump to another branch (harmless for candidate 1, which stops at the first arrival).
 
 ## TODO
 
 1. Rewrite the README for cw-families: it still describes cmc-immersion (title, controls, layout, the removed panels).
 2. The label of a λ_j overlaps the label of the branch point it sits on.
 3. The page title and subtitle ("CMC surfaces") and `about.html` still describe cmc-immersion.
+4. Editing the domain sliders while a candidate is shown has no effect (the candidate's cell is drawn); editing the spectral data leaves the candidate.
+5. Headless checks: `chromium --virtual-time-budget` does not finish loading module workers that import other modules, so screenshots of worker results need a real-time wait (a small DevTools-protocol script).
 
 ## 4. Decisions taken
 

@@ -166,6 +166,9 @@
   .lab { color: var(--muted); font-style: italic; text-align: right; }
   .bphead { height: 30px; margin-top: 2px; }
   .genrow { margin: 6px 0 2px 4px; }
+  .candrow { display: flex; align-items: center; gap: 6px; margin: 4px 0 6px 4px; }
+  .candrow .num { width: 64px; }
+  #candNote { white-space: pre-line; }
   .genrow #genBox { margin: 4px 0 0 22px; display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; }
   .genrow #genBox[hidden] { display: none; }
   .genrow #genInfo { grid-column: 1 / -1; font-size: 14px; }
@@ -214,6 +217,21 @@
 <aside id="panel">
   <h1>CMC surfaces</h1>
   <p class="sub">Immersions of the plane with constant mean curvature, built from spectral data by integrating polynomial Killing fields.</p>
+
+  <section class="sec">
+    <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="candBox"><span class="chev" data-glyph="chev"></span>Candidates</button></h2>
+    <div class="secbody" id="candBox">
+      <div class="candrow">
+        <span class="lab">internal τ</span>
+        <input class="num" id="tauRe" type="text" inputmode="decimal" autocomplete="off" value="0.2" aria-label="Real part of the internal τ">
+        <span>+</span>
+        <input class="num" id="tauIm" type="text" inputmode="decimal" autocomplete="off" value="1.3" aria-label="Imaginary part of the internal τ">
+        <span>i</span>
+      </div>
+      <div class="btnrow"><button class="tbtn" id="cand1Btn" type="button" title="Open the pair for 1 at the starting scale and follow the genus 1 edge to the first arrival of a marked pair at the unit circle">Find candidate 1</button></div>
+      <p class="note" id="candNote"></p>
+    </div>
+  </section>
 
   <section class="sec">
     <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="bodySpec"><span class="chev" data-glyph="chev"></span>Spectral data</button></h2>
