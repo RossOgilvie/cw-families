@@ -110,6 +110,20 @@ export class PairIntegrator extends FrameIntegrator {
     for (let j = 0; j < 2; j++) mulAcc(y, f + 8 * j, this.evalGen(j), 0, dy, f + 8 * j, 1);
   }
 
+  /**
+   * A step bound for marching from the Killing field Z: 0.25 / |X(lam_j)| (largest over j and the x, y
+   * directions). Near the open end |X| ~ 0.7 / t (kappa_0 = 2 t), so fixed steps lose accuracy there.
+   */
+  stepCap(Z) {
+    const y = this.initialState(Z), dy = new Float64Array(this.len);
+    let m = 0;
+    for (const [cr, ci] of [[1, 0], [0, 1]]) {
+      this.rhs(y, dy, cr, ci);
+      for (let j = 0; j < 2; j++) m = Math.max(m, Math.hypot(...this.Xs[j]));
+    }
+    return m > 0 ? 0.25 / m : Infinity;
+  }
+
   /** Re-impose the Killing-field structure, and det F_j = 1 (F_j is not unitary off S^1). */
   project(y) {
     projectKilling(y.subarray(0, 8 * this.n));
@@ -211,9 +225,14 @@ export const projections = {
  * Project points of R^4 (Float64Array, 4 per point) to R^3 (Float32Array, 3 per point).
  * kind 'auto': if the points lie on a round 3-sphere (relative residual below 1e-6), stereographic
  * projection of that sphere from its point farthest from the surface (the antipode of the direction
- * of the centroid from the centre), onto the hyperplane through the centre; otherwise orthogonal
- * projection onto the three principal axes of the point cloud. 'drop4' and 'stereo4' as in projections.
- * Returns { pos, used } with used one of 'sphere', 'pca', 'drop4', 'stereo4'.
+ * of the centroid from the centre), onto the hyperplane through the centre; otherwise 'balanced'.
+ * kind 'balanced': read f in S^4 and move it by a Möbius transformation to its conformal barycenter
+ * (balanceS4), then project stereographically from the principal axis of least spread (the sign farther
+ * from the surface) and keep the three principal axes of most spread. A round 2-sphere becomes the unit
+ * sphere, so a near-round surface (e.g. near the open end, a branched double cover) looks round.
+ * kind 'pca': orthogonal projection of f in R^4 onto the three principal axes of the point cloud.
+ * 'drop4' and 'stereo4' as in projections.
+ * Returns { pos, used } with used one of 'sphere', 'balanced', 'pca', 'drop4', 'stereo4'.
  */
 export function projectPoints(P, kind = 'auto') {
   const N = P.length / 4, pos = new Float32Array(3 * N);
@@ -224,7 +243,7 @@ export function projectPoints(P, kind = 'auto') {
   }
   const fin = [];
   for (let v = 0; v < N; v++) if ([0, 1, 2, 3].every((e) => Number.isFinite(P[4 * v + e]))) fin.push(v);
-  const sph = sphereFit(P, fin);
+  const sph = kind === 'auto' ? sphereFit(P, fin) : null;
   if (sph && sph.res < 1e-6) {
     const { c, R } = sph;
     const n = farthestPole(P, fin, c, R);
@@ -237,6 +256,18 @@ export function projectPoints(P, kind = 'auto') {
     }
     return { pos, used: 'sphere' };
   }
+  if (kind !== 'pca' && fin.length >= 6) {
+    const { X, axes } = balancedAxes(P, fin);
+    // pole: the axis of least spread, with the sign whose nearest point is farther
+    const n5 = axes[4], top = [-1, 1].map((sg) => Math.max(...X.map((x) => sg * dot5(x, n5))));
+    const p = top[0] < top[1] ? n5.map((q) => -q) : n5;
+    pos.fill(NaN);
+    X.forEach((x, i) => {
+      const k = 1 / (1 - dot5(x, p));
+      for (let a = 0; a < 3; a++) pos[3 * fin[i] + a] = k * dot5(x, axes[a]);
+    });
+    return { pos, used: 'balanced' };
+  }
   // principal axes
   const m = [0, 0, 0, 0];
   for (const v of fin) for (let e = 0; e < 4; e++) m[e] += P[4 * v + e] / fin.length;
@@ -245,7 +276,7 @@ export function projectPoints(P, kind = 'auto') {
     const y = [0, 1, 2, 3].map((e) => P[4 * v + e] - m[e]);
     for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) C[a][b] += y[a] * y[b];
   }
-  const { vals, vecs } = jacobi4(C);
+  const { vals, vecs } = jacobi(C);
   const order = [0, 1, 2, 3].sort((a, b) => vals[b] - vals[a]);
   const B = order.slice(0, 3).map((k) => vecs.map((row) => row[k]));
   for (let v = 0; v < N; v++) {
@@ -342,23 +373,109 @@ function complementBasis(n) {
   return B;
 }
 
-/** Eigen-decomposition of a symmetric 4x4 matrix by Jacobi rotations; vecs[:, k] belongs to vals[k]. */
-function jacobi4(S) {
-  const A = S.map((r) => r.slice()), V = [0, 1, 2, 3].map((i) => [0, 1, 2, 3].map((j) => (i === j ? 1 : 0)));
+/** Eigen-decomposition of a symmetric n x n matrix by Jacobi rotations; vecs[:, k] belongs to vals[k]. */
+function jacobi(S) {
+  const n = S.length, A = S.map((r) => r.slice()), V = A.map((_, i) => A.map((__, j) => (i === j ? 1 : 0)));
+  let scale = 0;
+  for (let p = 0; p < n; p++) for (let q = 0; q < n; q++) scale += A[p][q] ** 2;
   for (let sweep = 0; sweep < 50; sweep++) {
     let off = 0;
-    for (let p = 0; p < 4; p++) for (let q = p + 1; q < 4; q++) off += A[p][q] ** 2;
-    if (off < 1e-30) break;
-    for (let p = 0; p < 4; p++) for (let q = p + 1; q < 4; q++) {
+    for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += A[p][q] ** 2;
+    if (off <= 1e-30 * scale) break;
+    for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) {
       if (Math.abs(A[p][q]) < 1e-300) continue;
       const th = 0.5 * Math.atan2(2 * A[p][q], A[q][q] - A[p][p]);
       const c = Math.cos(th), s = Math.sin(th);
-      for (let k = 0; k < 4; k++) { const a = A[k][p], b = A[k][q]; A[k][p] = c * a - s * b; A[k][q] = s * a + c * b; }
-      for (let k = 0; k < 4; k++) { const a = A[p][k], b = A[q][k]; A[p][k] = c * a - s * b; A[q][k] = s * a + c * b; }
-      for (let k = 0; k < 4; k++) { const a = V[k][p], b = V[k][q]; V[k][p] = c * a - s * b; V[k][q] = s * a + c * b; }
+      for (let k = 0; k < n; k++) { const a = A[k][p], b = A[k][q]; A[k][p] = c * a - s * b; A[k][q] = s * a + c * b; }
+      for (let k = 0; k < n; k++) { const a = A[p][k], b = A[q][k]; A[p][k] = c * a - s * b; A[q][k] = s * a + c * b; }
+      for (let k = 0; k < n; k++) { const a = V[k][p], b = V[k][q]; V[k][p] = c * a - s * b; V[k][q] = s * a + c * b; }
     }
   }
-  return { vals: [0, 1, 2, 3].map((i) => A[i][i]), vecs: V };
+  return { vals: A.map((r, i) => r[i]), vecs: V };
+}
+
+// ---------------------------------------------------------------- the surface read in S^4
+
+const dot5 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] + a[4] * b[4];
+
+/** Inverse stereographic projection R^4 -> S^4 in R^5 of the finite points idx: X = (2f, |f|^2 - 1) / (|f|^2 + 1). */
+function toS4(P, idx) {
+  return idx.map((v) => {
+    const f = [P[4 * v], P[4 * v + 1], P[4 * v + 2], P[4 * v + 3]];
+    const r2 = f[0] ** 2 + f[1] ** 2 + f[2] ** 2 + f[3] ** 2;
+    return [(2 * f[0]) / (r2 + 1), (2 * f[1]) / (r2 + 1), (2 * f[2]) / (r2 + 1), (2 * f[3]) / (r2 + 1), (r2 - 1) / (r2 + 1)];
+  });
+}
+
+/**
+ * Conformal barycenter (in place): Möbius transformations of S^4 that move the mean of the points to 0.
+ * With uniform weights on a uniform grid of the torus, this fixes the Möbius freedom of f up to
+ * rotations, so that shapes of different surfaces can be compared.
+ */
+function balanceS4(X) {
+  for (let it = 0; it < 400; it++) {
+    const m = [0, 0, 0, 0, 0];
+    for (const x of X) for (let e = 0; e < 5; e++) m[e] += x[e] / X.length;
+    const l = Math.hypot(...m);
+    if (l < 1e-10) break;
+    // the Möbius map of S^4 moving b (|b| < 1) to 0, with b a damped fraction of the mean
+    const b = m.map((q) => q * 0.5 * Math.min(1, 0.8 / l)), bb = dot5(b, b);
+    for (let i = 0; i < X.length; i++) {
+      const x = X[i], xb = dot5(x, b), d = x.map((q, e) => q - b[e]), d2 = dot5(d, d), den = 1 - 2 * xb + bb;
+      X[i] = d.map((q, e) => ((1 - bb) * q - d2 * b[e]) / den);
+    }
+  }
+  return X;
+}
+
+/** The balanced points and their principal axes in R^5, by decreasing second moment. */
+function balancedAxes(P, idx) {
+  const X = balanceS4(toS4(P, idx));
+  const C = [0, 1, 2, 3, 4].map(() => [0, 0, 0, 0, 0]);
+  for (const x of X) for (let a = 0; a < 5; a++) for (let b = 0; b < 5; b++) C[a][b] += x[a] * x[b] / X.length;
+  const { vals, vecs } = jacobi(C);
+  const order = [0, 1, 2, 3, 4].sort((a, b) => vals[b] - vals[a]);
+  return { X, axes: order.map((k) => vecs.map((row) => row[k])), moments: order.map((k) => vals[k]) };
+}
+
+/**
+ * How close an nx x ny grid surface (P in R^4, 4 per point; a uniform grid of the torus) is to a round
+ * 2-sphere, Möbius invariantly: after balancing in S^4, the best fit of a round 2-sphere (two linear
+ * relations among (X, 1), by least squares), and the area in S^4.
+ * Returns { defect (largest distance in R^5 of a point from the fitted sphere's 3-plane), area (S^4 area
+ * of the mesh / 4 pi, the covering degree when the defect is small) }.
+ */
+export function roundnessS4(P, nx, ny) {
+  const N = nx * ny, idx = [];
+  for (let v = 0; v < N; v++) if ([0, 1, 2, 3].every((e) => Number.isFinite(P[4 * v + e]))) idx.push(v);
+  if (idx.length < N) return { defect: Infinity, area: NaN };
+  const X = balanceS4(toS4(P, idx));
+  // linear relations c.X + d = 0: the smallest eigenvectors of the second moments of (X, 1)
+  const G = [0, 1, 2, 3, 4, 5].map(() => [0, 0, 0, 0, 0, 0]);
+  for (const x of X) { const y = [...x, 1]; for (let a = 0; a < 6; a++) for (let b = 0; b < 6; b++) G[a][b] += y[a] * y[b] / N; }
+  const { vals, vecs } = jacobi(G);
+  const rel = [0, 1, 2, 3, 4, 5].sort((a, b) => vals[a] - vals[b]).slice(0, 2).map((k) => vecs.map((row) => row[k]));
+  let defect = 0;
+  for (const x of X) {
+    // distance to the 3-plane {c_r.X + d_r = 0}: least squares in the span of the c_r
+    const r = rel.map((c) => dot5(c, x) + c[5]), cc = rel.map((c) => rel.map((e) => dot5(c, e)));
+    const det = cc[0][0] * cc[1][1] - cc[0][1] * cc[1][0];
+    const s = [(cc[1][1] * r[0] - cc[0][1] * r[1]) / det, (cc[0][0] * r[1] - cc[1][0] * r[0]) / det];
+    defect = Math.max(defect, Math.sqrt(Math.max(0, s[0] * r[0] + s[1] * r[1])));
+  }
+  let area = 0;
+  const at = (i, j) => X[j * nx + i];
+  const tri = (a, b, c) => {
+    const u = b.map((q, e) => q - a[e]), w = c.map((q, e) => q - a[e]);
+    return 0.5 * Math.sqrt(Math.max(0, dot5(u, u) * dot5(w, w) - dot5(u, w) ** 2));
+  };
+  const d2 = (a, b) => a.reduce((acc, q, e) => acc + (q - b[e]) ** 2, 0);
+  for (let j = 0; j + 1 < ny; j++) for (let i = 0; i + 1 < nx; i++) {
+    // split along the shorter diagonal (on a skew cell the other one inflates the area)
+    const [a, b, c, d] = [at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)];
+    area += d2(a, c) <= d2(b, d) ? tri(a, b, c) + tri(a, c, d) : tri(a, b, d) + tri(b, c, d);
+  }
+  return { defect, area: area / (4 * Math.PI) };
 }
 
 /**
@@ -378,7 +495,7 @@ function jacobi4(S) {
  */
 export function computeGenSurface(params) {
   const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
-  const { alphas, tau = [], z0 = [0, 0], width, height, hmax = 0.02, tol = 0, lams, signs = [1, 1] } = params;
+  const { alphas, tau = [], z0 = [0, 0], width, height, tol = 0, lams, signs = [1, 1] } = params;
   const nx = params.sCoords ? params.sCoords.length : params.nx;
   const ny = params.tCoords ? params.tCoords.length : params.ny;
   const g = alphas.length;
@@ -391,6 +508,7 @@ export function computeGenSurface(params) {
   const us = lams.map((lam, j) => leftEigenvector(Z, lam, nuAt(alphas, lam, signs[j])));
 
   const I = new PairIntegrator(alphas, lams);
+  const hmax = Math.min(params.hmax ?? 0.02, I.stepCap(Z));
   const y0 = I.initialState(Z);
   const r0 = Math.hypot(z0[0], z0[1]);
   if (r0 > 0) I.march(y0, z0[0] / r0, z0[1] / r0, r0, hmax, tol);

@@ -477,14 +477,14 @@ console.log('generalized Sym formula f = Q(u1 F(lam1)) Q(u2 F(lam2))^{-1} (cw_ca
     check('computeGenSurface vertex (1, 1) = direct integration (Float32)', Math.max(...[0, 1, 2, 3].map((e) => Math.abs(S.pos4[4 * v + e] - f[e]))), 1e-5);
   }
   // 5. automatic projection: the Clifford torus is recognized as lying on a 3-sphere (and its stereographic image
-  //    is bounded); a branch point as a Sym point gives a surface on no 3-sphere (principal axes)
+  //    is bounded); a branch point as a Sym point gives a surface on no 3-sphere (Möbius-balanced)
   {
     const L = Math.PI * Math.SQRT2;
     const C = computeGenSurface({ alphas: [], lams: [[0, 1], [0, -1]], signs: [1, 1], width: L, height: L, nx: 40, ny: 40, hmax: 0.01 });
     const ext = Math.max(C.bbox[3] - C.bbox[0], C.bbox[4] - C.bbox[1], C.bbox[5] - C.bbox[2]);
     check(`Clifford torus: projection = ${C.projection}, stereographic extent ${ext.toFixed(2)} bounded`, C.projection === 'sphere' && ext < 20 ? 0 : 1, 0.5);
     const B = computeGenSurface({ alphas: [[0.5, 0]], lams: [[0.5, 0], [0, 1]], signs: [1, 1], width: 4, height: 4, nx: 30, ny: 30, hmax: 0.01 });
-    check(`branch point as a Sym point: projection = ${B.projection} (on no 3-sphere)`, B.projection === 'pca' ? 0 : 1, 0.5);
+    check(`branch point as a Sym point: projection = ${B.projection} (on no 3-sphere)`, B.projection === 'balanced' ? 0 : 1, 0.5);
   }
 }
 
@@ -629,6 +629,20 @@ console.log('the tree: genus 0 edge, opening at lam = -1, genus 1 edge, candidat
     const E5 = genus2Edge(D.c1, { tMin: 1e-4 });
     check(`open end: the tau error scales with t (${o && o.tauError.toExponential(2)} at 1e-3, ${E5.openEnd && E5.openEnd.tauError.toExponential(2)} at 1e-4)`,
       o && E5.openEnd ? Math.abs(o.tauError / E5.openEnd.tauError - 10) : 1, 0.1);
+    // the limit surface: candidate 2 at t = 0.03 ... 0.001 tends to a round sphere covered twice, read in
+    // S^4 after a Möbius normalization (distance O(t^(1/2)), area -> 2 x 4 pi, W -> 8 pi)
+    const sh = D.choices.map((c) => c.shape), last = D.choices[D.choices.length - 1];
+    check(`open end: candidate 2 at t = ${D.choices.map((c) => c.t.toExponential(0)).join(', ')}: distance from a round sphere ${sh.map((s) => s.defect.toFixed(3)).join(', ')} (ratio sqrt(t))`,
+      Math.max(...sh.slice(1).map((s, i) => Math.abs(sh[i].defect / s.defect / Math.sqrt(D.choices[i].t / D.choices[i + 1].t) - 1))), 0.1);
+    check(`open end: S^4 area ${sh.map((s) => s.area.toFixed(3)).join(', ')} (x 4 pi) -> 2, below W / 4 pi`,
+      Math.abs(sh[sh.length - 1].area - 2) + Math.max(0, ...D.choices.map((c) => c.shape.area - c.W / (4 * Math.PI))), 0.03);
+    // Möbius-balanced projection: near the limit the surface is near the unit sphere of R^3
+    const n = 24, [l1, l2] = last.lattice.map((e) => Math.hypot(...e));
+    const S = computeGenSurface({ alphas: last.alphas, lams: last.syms.map((s) => s.lam), cell: last.lattice, projection: 'balanced',
+      sCoords: Array.from({ length: n }, (_, i) => (i * l1) / (n - 1)), tCoords: Array.from({ length: n }, (_, i) => (i * l2) / (n - 1)) });
+    let rad = 0;
+    for (let v = 0; v < n * n; v++) rad = Math.max(rad, Math.abs(Math.hypot(S.pos[3 * v], S.pos[3 * v + 1], S.pos[3 * v + 2]) - 1));
+    check(`open end: balanced projection at t = ${last.t.toExponential(0)} within ${rad.toFixed(3)} of the unit sphere`, rad, 0.15);
   }
   check('reduceTau maps 2.3 + 0.4i into F_1', (() => { const [x, y] = reduceTau([2.3, 0.4]); return Math.abs(x) <= 0.5 && x * x + y * y >= 1 - 1e-12 ? 0 : 1; })(), 0.5);
 }

@@ -93,6 +93,11 @@ Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in
    This agrees with Bohle 2010: our tori have a harmonic left normal (im Q° constant, Lemma 6.3), and a Case II torus in a 3-sphere is CMC there (Corollary 6.12), whose constant Darboux transforms are σ-nodes over S^1 (Lemma 4.7 c); a branch point as a Sym point rules this out.
    So the two-coloured look of the drawings (one half seen from outside, one from inside) comes from the projection: a generic projection of a surface in R^4 to R^3 is an immersion with self-intersection curves ending in isolated cross-caps, and across such a curve one sees the other side.
    Checked: numerically (the fit) and by the argument above.
+   Read in S^4 after a Möbius normalization (conformal barycenter), the candidates at 0.45 + 0.95i, 0.4 + i and 0.3 + 0.8i are still at distance 0.22–0.52 from the nearest 3-sphere (Clifford torus: 4e-8); in that frame the drawings lose the two-coloured look.
+12. F12: The open end is a branched double cover of the round sphere.
+   When the genus 2 edge reaches the open end without an arrival, candidate 2 (the two pairs of branch points as Sym points, on the doubled lattice) at scale t = sqrt|α_1 α_2| tends to the quotient map T^2 → T^2/±1 ≅ S^2 of the external torus onto a round 2-sphere, so W → 8π.
+   Read in S^4 after a Möbius normalization, the distance from a round 2-sphere is O(t^{1/2}) and the area tends to 2 × 4π, with no concentration of area (no bubbling); the branch points are the four half-periods of the doubled lattice, and f(−z) − f(z) → 0.
+   Checked: numerically at internal τ = 0.2 + 1.3i, 0.5 + 0.9i, 1.6i and 2i, for t = 0.03 down to 0.001; not proved.
 
 ## Open questions
 

@@ -171,7 +171,7 @@ function readHash() {
     if (p.has('y')) {
       const ys = p.get('y').split(';').map(nums);
       if (ys.length === 2 && ys.every((v) => v.length === 3 && v.every(Number.isFinite))) {
-        state.gen = { ...state.gen, proj: ['drop4', 'stereo4'].includes(p.get('j')) ? p.get('j') : 'auto', on: true, lams: ys.map((v) => [v[0], v[1]]), signs: ys.map((v) => (v[2] < 0 ? -1 : 1)) };
+        state.gen = { ...state.gen, proj: ['drop4', 'stereo4', 'balanced', 'pca'].includes(p.get('j')) ? p.get('j') : 'auto', on: true, lams: ys.map((v) => [v[0], v[1]]), signs: ys.map((v) => (v[2] < 0 ? -1 : 1)) };
       }
     }
     if (p.has('c')) { const c = nums(p.get('c')); if (c.length === 2) state.z0 = c; }
@@ -355,7 +355,7 @@ function show(res) {
   const argQ = hopfArg(state.alphas, state.theta0);
   const size = Math.max(res.bbox[3] - res.bbox[0], res.bbox[4] - res.bbox[1], res.bbox[5] - res.bbox[2]) / (2 * state.H);
   if (state.gen.on) {
-    showStatus(`Genus ${g} · two Sym points, f in ℝ⁴ (${{ sphere: 'on a 3-sphere: stereographic', pca: 'not on a 3-sphere: principal axes', stereo4: 'stereographic from e₄', drop4: 'drop x₄' }[res.projection]}) · κ₀ = ${fmt(kappa0(state.alphas), 3)}` +
+    showStatus(`Genus ${g} · two Sym points, f in ℝ⁴ (${{ sphere: 'on a 3-sphere: stereographic', balanced: 'not on a 3-sphere: Möbius-balanced', pca: 'principal axes', stereo4: 'stereographic from e₄', drop4: 'drop x₄' }[res.projection]}) · κ₀ = ${fmt(kappa0(state.alphas), 3)}` +
       ` · ${res.nx}×${res.ny} in ${res.stats.ms.toFixed(0)} ms · extent ${size.toPrecision(3)}`, false);
     return;
   }
@@ -486,9 +486,12 @@ function candidate2Note(R) {
   const one = R.c1 ? `Candidate 1: the pair of class ${R.c1.cls} arrives at α = −${fixed(R.c1.r, 6)}; W = ${fixed(R.c1.W / PI ** 2, 4)} π².` : 'No candidate 1.';
   if (!R.event && R.openEnd) {
     const o = R.openEnd;
-    return `${order}\n${one}\nGenus 2: no arrival before the open end (both branch points go to 0). There candidates 2 and 3 become a branched double cover of the sphere, W = 8π.\n` +
-      `Followed to t = ${o.t.toExponential(0)} (the scale of the branch points): W/8π = ${fixed(o.WRatio, 5)}; open-end τ of the rescaled roots = ${c(o.tau)}, the internal τ to ${o.tauError.toExponential(1)}.\n` +
-      `Drawn: candidate 2 at t = ${fixed(R.drawnAt, 3)} (W = ${fixed(R.choices[0].W / PI ** 2, 4)} π², closing ${R.choices[0].defects.closing.toExponential(0)}).`;
+    const ext = R.choices[0];
+    const lines = R.choices.map((ch) => `  t = ${ch.t.toExponential(0)}: W/8π = ${fixed(ch.W / (8 * PI), 4)}, distance from a round sphere ${fixed(ch.shape.defect, 3)}, area in S⁴ ${fixed(ch.shape.area, 3)} × 4π`);
+    return `${order}\n${one}\nGenus 2: no arrival before the open end (both branch points go to 0, at the scale t).\n` +
+      `Followed to t = ${o.t.toExponential(0)}: open-end τ of the rescaled roots = ${c(o.tau)}, the internal τ to ${o.tauError.toExponential(1)}.\n` +
+      `Candidate 2 (external τ = ${c(ext.tauExt)}${ext.doubled ? ', double cover' : ''}), read in S⁴ after a Möbius normalization:\n${lines.join('\n')}\n` +
+      `The limit is the round sphere covered twice (area 2 × 4π), branched at the four half-periods: the quotient of the torus by z ↦ −z. Computed in ${R.ms.toFixed(0)} ms.`;
   }
   if (!R.event) return `${order}\n${one}\nGenus 2: no arrival (${R.end.why}).`;
   const lines = R.choices.map((ch) => `  ${CHOICE_NAMES[ch.pair.join()]} (${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')}): external τ = ${c(ch.tauExt)}, closing ${ch.defects.closing.toExponential(0)}`);
@@ -501,7 +504,7 @@ function candidate2Path(R) {
 /** Draw choice i of candidate 2. */
 function showCandidate2(i) {
   const R = cand.c2, ch = R.choices[i];
-  state.alphas = R.alphas.map((a) => a.slice());
+  state.alphas = (ch.alphas || R.alphas).map((a) => a.slice());
   state.gen = { ...state.gen, on: true, lams: ch.syms.map((s) => s.lam.slice()), signs: [1, 1] };
   syncTau();
   refreshAll();
@@ -552,9 +555,12 @@ function requestCandidate(tau) {
         candPad.set({ tau: R.tau, blocked: !R.event && !R.openEnd });
         $('cand2Pick').hidden = !R.event && !R.openEnd;
         if (!R.event && !R.openEnd) return;
+        // near the open end the choices are candidate 2 at several scales t (default: the one nearest 0.01)
+        const sameKind = cand.c2 && !cand.c2.event === !R.event;
         cand.c2 = R;
-        const keep = +$('cand2Pick').value || 0;
-        $('cand2Pick').innerHTML = R.choices.map((ch, i) => `<option value="${i}">${CHOICE_NAMES[ch.pair.join()]} (${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')})</option>`).join('');
+        const near01 = R.choices.reduce((b, ch, i) => (ch.t && Math.abs(Math.log(ch.t / 0.01)) < Math.abs(Math.log(R.choices[b].t / 0.01)) ? i : b), 0);
+        const keep = sameKind ? +$('cand2Pick').value || 0 : R.event ? 0 : near01;
+        $('cand2Pick').innerHTML = R.choices.map((ch, i) => `<option value="${i}">${CHOICE_NAMES[ch.pair.join()]} ${R.event ? `(${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')})` : `at t = ${ch.t.toExponential(0)}`}</option>`).join('');
         $('cand2Pick').value = String(Math.min(keep, R.choices.length - 1));
         if (anim) stopAnim();
         showCandidate2(+$('cand2Pick').value);

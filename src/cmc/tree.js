@@ -21,7 +21,7 @@
 import { QMap, genus0Resonance, classifyPair } from './resonance.js';
 import { basicPeriods, thetaPoly } from './periods.js';
 import { killingField } from './cmc.js';
-import { PairIntegrator, leftEigenvector, nuAt } from './gensym.js';
+import { PairIntegrator, leftEigenvector, nuAt, computeGenSurface, roundnessS4 } from './gensym.js';
 import { leafData, willmoreFrame } from './leaf.js';
 import { WhithamCurve, ellVector } from './whitham.js';
 import { openEndTau } from './genus2.js';
@@ -215,6 +215,7 @@ export function candidate(alphas, basis, syms, { h = 0.002 } = {}) {
   const Z = killingField(alphas);
   const lams = syms.map((s) => s.lam);
   const I = new PairIntegrator(alphas, lams);
+  h = Math.min(h, I.stepCap(Z));
   const us = syms.map((s) => leftEigenvector(Z, s.lam, s.nu));
   const [w1, w2] = basis;
   const shoot = (w) => { const y = I.initialState(Z); const L = Math.hypot(...w); I.march(y, w[0] / L, w[1] / L, L, h); return y; };
@@ -493,7 +494,9 @@ export function openEndInfo(samples, tau1) {
  * Candidate 2 for internal tau: candidate 1, then the genus 2 edge to the arrival of the remaining pair.
  * At the arrival there are three trivial-multiplier rho-pairs: the branch points alpha_1, alpha_2 (from the
  * two openings) and the new node; each choice of two gives a torus (choices: [{ pair, ...candidate }]).
- * Returns { tau, c1, edge, event, alphas, choices } (event null if none was found).
+ * Returns { tau, c1, edge, event, alphas, choices } (event null if none was found). If the edge reaches the
+ * open end instead, also openEnd, and the choices are candidate 2 at the scales opts.drawT (default 0.03,
+ * 0.01, 0.003, 0.001), each with t, alphas and shape (roundnessS4 on a shapeGrid^2 grid of one cell).
  */
 export function candidate2(tau, opts = {}) {
   const c1 = candidate1(tau, opts.genus1 || {});
@@ -502,16 +505,24 @@ export function candidate2(tau, opts = {}) {
   const event = edge.events[0] || null;
   if (!event) {
     // no arrival: near the open end, candidate 2 (the two pairs of branch points as Sym points) at the
-    // last point of the edge approximates the limit, a branched double cover of the sphere
+    // scale t approximates the limit, a branched double cover of the round sphere (roundnessS4: the
+    // distance from a round sphere is O(t^(1/2)), and the S^4 area tends to 2 (x 4 pi))
     if (!edge.openEnd) return { tau, frame: c1.frame, c1, edge, event: null };
-    // drawn at a moderate scale (t >= 0.03): closer to the open end the frame equations get stiff
-    // (kappa_0 ~ 2t)
-    const drawable = edge.samples.filter((sm) => sm.t >= 0.03);
-    const last = drawable.length ? drawable[drawable.length - 1] : edge.samples[0], al = last.alphas;
-    const k = ellVector(al).map(([x, y]) => [x, -y]);
-    const syms = [{ lam: al[0], nu: [0, 0] }, { lam: al[1], nu: [0, 0] }];
-    const near = { pair: ['a1', 'a2'], syms, ...candidate(al, dualBasis(k[0], k[1]), syms) };
-    return { tau, frame: c1.frame, c1, edge, event: null, openEnd: edge.openEnd, alphas: al, drawnAt: last.t, choices: [near] };
+    const choices = [];
+    for (const tDraw of opts.drawT || [0.03, 0.01, 0.003, 0.001]) {
+      const sm = edge.samples.reduce((b, x) => (Math.abs(Math.log(x.t / tDraw)) < Math.abs(Math.log(b.t / tDraw)) ? x : b));
+      if (Math.abs(Math.log(sm.t / tDraw)) > 0.5 || choices.some((ch) => ch.t === sm.t)) continue;
+      const al = sm.alphas, k = ellVector(al).map(([x, y]) => [x, -y]);
+      const syms = [{ lam: al[0], nu: [0, 0] }, { lam: al[1], nu: [0, 0] }];
+      const ch = { pair: ['a1', 'a2'], t: sm.t, alphas: al, syms, ...candidate(al, dualBasis(k[0], k[1]), syms) };
+      // the shape, Möbius invariantly, on a coarse uniform grid of one cell (first and last rows coincide)
+      const n = opts.shapeGrid || 36, [l1, l2] = ch.lattice.map((e) => Math.hypot(...e));
+      const S = computeGenSurface({ alphas: al, lams: [al[0], al[1]], cell: ch.lattice, projection: 'drop4',
+        sCoords: Array.from({ length: n }, (_, i) => (i * l1) / (n - 1)), tCoords: Array.from({ length: n }, (_, i) => (i * l2) / (n - 1)) });
+      ch.shape = roundnessS4(S.pos4, n, n);
+      choices.push(ch);
+    }
+    return { tau, frame: c1.frame, c1, edge, event: null, openEnd: edge.openEnd, alphas: choices[0].alphas, choices };
   }
   const al = event.alphas;
   const pts = { a1: { lam: al[0], nu: [0, 0] }, a2: { lam: al[1], nu: [0, 0] }, node: symPoint(al, event.lamNode) };
