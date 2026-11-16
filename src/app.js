@@ -349,6 +349,7 @@ function show(res) {
   last = res;
   const { vals, range } = colourValues(res);
   viewer.setSurface(res, vals);
+  branchMarkers(res);
   viewer.setStyle(textureStyle(range));
   if (needFrame) { viewer.frame(); needFrame = false; }
   if (res.divisor) widget.set({ divisor: res.divisor });
@@ -467,6 +468,7 @@ function leaveCandidate() {
   state.cell = null;
   cand.path = null;
   treeView.set({ index: -1 });
+  viewer.setMarkers([]);
   showFamily();
   $('candNote').textContent = cand.last ? `${cand.last} (left: the data were edited)` : '';
 }
@@ -495,6 +497,12 @@ function candidate2Note(R) {
       `The limit is the round sphere covered twice (area 2 × 4π), branched at the four half-periods: the quotient of the torus by z ↦ −z. Computed in ${R.ms.toFixed(0)} ms.`;
   }
   if (!R.event) return `${order}\n${one}\nGenus 2: no arrival (${R.end.why}).`;
+  if (R.double) {
+    const names = { 'a1,a2': 'Candidate 1 = candidate 2 (α + node a)', 'a1,node': 'Candidate 3 (α + node b)', 'a2,node': 'Other choice (node a + node b)' };
+    const lines = R.choices.map((ch) => `  ${names[ch.pair.join()]}: external τ = ${c(ch.tauExt)}, closing ${ch.defects.closing.toExponential(0)}`);
+    return `${order}\n${one}\nDouble arrival: the pairs of the other two classes, equally long here, reach S¹ together, so the genus 2 edge has length 0. ` +
+      `All three candidates lie on the genus 1 curve, with W = ${fixed(R.choices[0].W / PI ** 2, 4)} π², and differ only in which two of the ripe pairs (α and the two nodes) are the Sym points:\n${lines.join('\n')}\nComputed in ${R.ms.toFixed(0)} ms.`;
+  }
   const lines = R.choices.map((ch) => `  ${CHOICE_NAMES[ch.pair.join()]} (${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')}): external τ = ${c(ch.tauExt)}, closing ${ch.defects.closing.toExponential(0)}`);
   return `${order}\n${one}\nGenus 2: the remaining pair arrives at t = ${fixed(R.event.t, 5)} (the scale of the branch points); W = ${fixed(R.choices[0].W, 4)} = ${fixed(R.choices[0].W / PI ** 2, 4)} π² (doubled lattice) for every choice of Sym points:\n${lines.join('\n')}\nComputed in ${R.ms.toFixed(0)} ms.`;
 }
@@ -503,6 +511,7 @@ function candidate2Note(R) {
 const VIEW_NAMES = {
   'a1,a2': 'Candidate 2 (α₁ + α₂)', 'a1,b': 'Towards candidate 3 (α₁ + the pair)', 'a2,b': 'α₂ + the pair',
   'a1,node': 'Candidate 3 (α₁ + the node)', 'a2,node': 'Other choice (α₂ + the node)',
+  'double:a1,a2': 'Candidate 1 = candidate 2 (α + node a)', 'double:a1,node': 'Candidate 3 (α + node b)', 'double:a2,node': 'Other choice (node a + node b)',
 };
 const viewName = (key) => VIEW_NAMES[key] || (key === 'candidate 1' ? 'Candidate 1 (α + the node)' : key.startsWith('one,') ? 'the pair for 1 + the arriving pair' : 'α + the arriving pair');
 const treeView = new TreeView($('treeView'), (i, dragging) => { showSample(i); needFrame = !dragging && needFrame; changed(dragging); });
@@ -525,7 +534,37 @@ function showSample(i) {
   cand.path = edge.length > 1 ? { points: edge.map((s, j) => ({ s: j, alphas: s.alphas, W: s.W })), critical: [] } : null;
   showFamily();
   cand.sampleNote = `Genus ${sm.edge}${sm.node ? `, ${sm.node}` : ''}: ${sm.edge === 1 ? `α = −${fixed(-sm.alphas[0][0], 5)}, t = ${fixed(sm.t, 5)}` : `t = ${sm.t < 0.01 ? sm.t.toExponential(2) : fixed(sm.t, 4)}`}, W = ${fixed(sm.W / PI ** 2, 4)} π² (closing lattice).\n${viewName(v.key)}: ${v.ripe ? 'ripe, a torus' : 'not ripe, a plane'}`;
+  if (towardsOpenEnd()) cand.sampleNote += ' (the spikes mark the four half-periods, where the limit, the sphere covered twice, is branched)';
   $('treeNote').textContent = cand.sampleNote;
+}
+/** Whether the current sample is candidate 2 on a genus 2 edge that ends at an open end. */
+function towardsOpenEnd() {
+  const T = cand.tree, sm = T && state.cell && T.samples[cand.index];
+  return !!sm && sm.edge === 2 && T.nodes.some((n) => n.label === 'open end') && sm.views[+$('cand2Pick').value || 0].key === 'a1,a2';
+}
+/**
+ * Towards an open end, candidate 2 tends to the branched double cover T^2 -> T^2/±1 of the round sphere,
+ * branched at the four half-periods of the cell (F12; they are the minima of the conformal factor all
+ * along the edge). Spikes along the outward direction mark them.
+ */
+function branchMarkers(res) {
+  if (!towardsOpenEnd() || res.nx < 3 || res.ny < 3) { viewer.setMarkers([]); return; }
+  const { nx, ny, pos } = res, N = nx * ny;
+  const at = (fi, fj) => {
+    // bilinear interpolation at the fractional grid index (fi, fj)
+    const i = Math.min(nx - 2, Math.floor(fi)), j = Math.min(ny - 2, Math.floor(fj)), a = fi - i, b = fj - j;
+    const P = (ii, jj, e) => pos[3 * (jj * nx + ii) + e];
+    return [0, 1, 2].map((e) => (1 - a) * (1 - b) * P(i, j, e) + a * (1 - b) * P(i + 1, j, e) + (1 - a) * b * P(i, j + 1, e) + a * b * P(i + 1, j + 1, e));
+  };
+  const c = [0, 0, 0];
+  for (let v = 0; v < N; v++) for (let e = 0; e < 3; e++) c[e] += pos[3 * v + e] / N;
+  const R = 0.5 * Math.hypot(res.bbox[3] - res.bbox[0], res.bbox[4] - res.bbox[1], res.bbox[5] - res.bbox[2]);
+  const h1 = (nx - 1) / 2, h2 = (ny - 1) / 2;
+  const list = [[0, 0], [h1, 0], [0, h2], [h1, h2]].map(([fi, fj]) => {
+    const p = at(fi, fj), d = p.map((x, e) => x - c[e]), l = Math.hypot(...d) || 1;
+    return { p, d: d.map((x) => x / l) };
+  });
+  viewer.setMarkers(list, { len: 0.4 * R, rad: 0.012 * R });
 }
 /** f(z + e_k) = c_k f(z) on the cell (c_k real at unripe Sym points; 1 when the torus closes). */
 function cellFactors(res) {

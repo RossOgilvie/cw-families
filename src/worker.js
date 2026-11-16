@@ -51,6 +51,7 @@ self.onmessage = (e) => {
         c1: c1.event ? { r: c1.event.r, cls: c1.event.cls, W: c1.W, tauExt: c1.tauExt } : null,
         samples: C.edge ? C.edge.samples.map(({ s, alphas, W }) => ({ s, alphas, W })) : [], end: C.edge ? C.edge.end : { why: 'no candidate 1' } };
       if (C.openEnd) out.openEnd = C.openEnd;
+      if (C.double) out.double = true;
       if (c1.event) out.tree = treeOf(C);
       if (C.event || C.openEnd) {
         Object.assign(out, {

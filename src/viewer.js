@@ -207,6 +207,38 @@ export class Viewer {
     this.dirty = true;
   }
 
+  /**
+   * Markers: spikes from the points p along the unit directions d (model coordinates), of length len and
+   * radius rad, with a ball at the base; [] removes them.
+   */
+  setMarkers(list, { len = 1, rad = 0.02, colour = '#9E3F24' } = {}) {
+    if (this.markers) {
+      this.holder.remove(this.markers);
+      this.markers.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    }
+    this.markers = null;
+    this.markerPad = 0;
+    if (list.length) {
+      const g = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: colour });
+      const up = new THREE.Vector3(0, 1, 0);
+      for (const { p, d } of list) {
+        const dir = new THREE.Vector3(...d).normalize();
+        const cyl = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, len, 12), mat);
+        cyl.quaternion.setFromUnitVectors(up, dir);
+        cyl.position.set(...p).addScaledVector(dir, len / 2);
+        const tip = new THREE.Mesh(new THREE.SphereGeometry(2 * rad, 16, 12), mat);
+        tip.position.set(...p).addScaledVector(dir, len);
+        const base = new THREE.Mesh(new THREE.SphereGeometry(1.6 * rad, 16, 12), mat);
+        base.position.set(...p);
+        g.add(cyl, tip, base);
+      }
+      this.markers = g;
+      this.holder.add(g);
+      this.markerPad = len;
+    }
+    this.dirty = true;
+  }
+
   setColourValues(vals) {
     this.geometry.setAttribute('val', new THREE.BufferAttribute(vals, 1));
     this.dirty = true;
@@ -300,6 +332,7 @@ export class Viewer {
       const ez = Math.max(Math.abs(k * b[2] + o.z), Math.abs(k * b[5] + o.z));
       r = Math.hypot(ex, ey, ez);
     }
+    r += k * (this.markerPad || 0);
     const d = Math.hypot(this.pan.x, this.pan.y, this.dist - this.pan.z);
     cam.near = Math.max(d - 1.05 * r, d * 1e-3);
     cam.far = d + 1.05 * r;

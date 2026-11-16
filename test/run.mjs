@@ -676,6 +676,18 @@ console.log('the tree: genus 0 edge, opening at lam = -1, genus 1 edge, candidat
         Math.max(A.r, B.r, Math.abs(A.c - B.c) / Math.abs(A.c)) + (Math.abs(A.c - 1) > 1e-3 ? 0 : 1), 1e-4);
     }
   }
+  // a double arrival on the wall Re tau = 1/2 of F_6 (classes 2 and 3 equally long): the genus 2 edge has
+  // length 0, and the three candidates are the three choices of two of { alpha, node a, node b } on the
+  // genus 1 curve (same W); candidate 2 is candidate 1, and the candidates just off the wall tend to these
+  {
+    const D = candidate2([0.5, 0.9]), N = candidate2([0.499, 0.9]);
+    const dW = D.double ? Math.max(...D.choices.map((c) => Math.abs(c.W - D.c1.W))) / D.c1.W : 1;
+    check(`double arrival at 0.5 + 0.9i: three candidates on the genus 1 curve, W = ${(D.c1.W / Math.PI ** 2).toFixed(4)} pi^2 for all`, dW + (D.choices ? Math.max(...D.choices.map((c) => c.defects.closing)) : 1), 1e-6);
+    const tE = (c) => c.tauExt;
+    check('double arrival: candidate 2 = candidate 1 (external tau)', Math.hypot(...tE(D.choices[0]).map((x, i) => x - tE(D.c1)[i])), 1e-9);
+    check(`just off the wall (0.499 + 0.9i): W and the external taus of the three choices within 4e-3 of the double arrival`,
+      Math.max(Math.abs(N.choices[0].W - D.c1.W) / D.c1.W, ...N.choices.map((c, i) => Math.hypot(...c.tauExt.map((x, k) => x - D.choices[i].tauExt[k])))), 4e-3);
+  }
   check('reduceTau maps 2.3 + 0.4i into F_1', (() => { const [x, y] = reduceTau([2.3, 0.4]); return Math.abs(x) <= 0.5 && x * x + y * y >= 1 - 1e-12 ? 0 : 1; })(), 0.5);
 }
 

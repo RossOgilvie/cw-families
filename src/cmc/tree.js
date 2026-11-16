@@ -169,11 +169,13 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, 
     first = false;
     if (!ok) { end = { r: next, why: 'continuation failed' }; break; }
     step = Math.min(1 - factor, step * 1.5);
-    // an arrival between r and next: the pair was off and is no longer off
+    // an arrival between r and next: the pair passes through a sigma-node, from off S^1 onto it (or from
+    // on S^1 off it); refined by bisection, continuing from the side where the pair is off S^1
     for (const n of names) {
-      if (r !== next && cur[n].cls && cur[n].cls.kind === 'off' && res[n].cls.kind !== 'off') {
-        let hi = r, lo = next, sHi = cur[n];
-        for (let i = 0; i < 50 && hi - lo > 1e-13; i++) {
+      if (r !== next && cur[n].cls && (cur[n].cls.kind === 'off') !== (res[n].cls.kind === 'off')) {
+        const fromOff = cur[n].cls.kind === 'off';
+        let hi = fromOff ? r : next, lo = fromOff ? next : r, sHi = fromOff ? cur[n] : res[n];
+        for (let i = 0; i < 50 && Math.abs(hi - lo) > 1e-13; i++) {
           const m = (hi + lo) / 2, R = pairAt(tau, n, m, sHi);
           if (R.ok && R.cls.kind === 'off') { hi = m; sHi = { P: R.P, Q: R.Q, cls: R.cls }; } else lo = m;
         }
@@ -185,7 +187,17 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.97, 
           // the other pairs at the same point, for continuing them beyond the event
           const others = {};
           for (const o of names) if (o !== n) { const Ro = pairAt(tau, o, hi, cur[o]); others[o] = { P: Ro.P, Q: Ro.Q, ok: Ro.ok }; }
-          events.push({ name: n, r: hi, t: R.t, W: Wint(hi, R.t), P: R.P, Q: R.Q, lamNode: [mid[0] / l, mid[1] / l], gap, others });
+          // a double arrival (on the walls of F_6 where the other two classes are equally long): another
+          // pair is a sigma-node at the same point of the edge
+          let double = null;
+          for (const [o, p] of Object.entries(others)) {
+            const c = classifyPair(p.P, p.Q, 1e-6), g = dist(p.P.lam, p.Q.lam);
+            if (p.ok && g < 1e-3 && (c.kind !== 'off' || Math.abs(c.dist) < 1e-6)) {
+              const mo = [(p.P.lam[0] + p.Q.lam[0]) / 2, (p.P.lam[1] + p.Q.lam[1]) / 2], lo2 = Math.hypot(...mo);
+              double = { name: o, lamNode: [mo[0] / lo2, mo[1] / lo2] };
+            }
+          }
+          events.push({ name: n, r: hi, t: R.t, W: Wint(hi, R.t), P: R.P, Q: R.Q, lamNode: [mid[0] / l, mid[1] / l], gap, others, double });
         }
         else { end = { r: hi, why: `the ${n} pair jumped branches (gap ${gap.toFixed(3)})` }; jumped = true; }
       }
@@ -433,10 +445,13 @@ export function genus2Edge(c1, { eps = 1e-3, tMin = 1e-3, dSigma = 0.1, maxEvent
     }
     if (!ok) { end = { t: Math.exp(next), why: 'continuation failed' }; break; }
     step = Math.min(dSigma, step * 1.5);
-    if (cur.cls && cur.cls.kind === 'off' && R.cls.kind !== 'off') {
-      // arrival: bisection in sigma, continuing from the side where the pair is off S^1
-      let hi = sigma, lo = next, sHi = { P: cur.P, Q: cur.Q }, bHi = beta, refHi = ref;
-      for (let i = 0; i < 50 && hi - lo > 1e-13; i++) {
+    if (cur.cls && (cur.cls.kind === 'off') !== (R.cls.kind === 'off')) {
+      // arrival (a passage through a sigma-node, onto S^1 or off it): bisection in sigma, continuing from the
+      // side where the pair is off S^1
+      const fromOff = cur.cls.kind === 'off';
+      let hi = fromOff ? sigma : next, lo = fromOff ? next : sigma;
+      let sHi = fromOff ? { P: cur.P, Q: cur.Q } : { P: R.P, Q: R.Q }, bHi = fromOff ? beta : sol.beta, refHi = fromOff ? ref : R.ell;
+      for (let i = 0; i < 50 && Math.abs(hi - lo) > 1e-13; i++) {
         const m = (hi + lo) / 2, sm = solveBeta(Math.exp(m), bHi, refHi);
         if (!sm.ok) { lo = m; continue; }
         const Rm = pairAt2(alphasOf(Math.exp(m), sm.beta), sHi, sm.ell);
@@ -495,6 +510,8 @@ export function openEndInfo(samples, tau1) {
  * Candidate 2 for internal tau: candidate 1, then the genus 2 edge to the arrival of the remaining pair.
  * At the arrival there are three trivial-multiplier rho-pairs: the branch points alpha_1, alpha_2 (from the
  * two openings) and the new node; each choice of two gives a torus (choices: [{ pair, ...candidate }]).
+ * At a double arrival in genus 1 (c1.event.double) there is no genus 2 edge: the choices are the three
+ * pairs of { alpha, node a, node b } on the genus 1 curve, with double: true and edge null.
  * Returns { tau, c1, edge, event, alphas, choices } (event null if none was found). If the edge reaches the
  * open end instead, also openEnd, and the choices are candidate 2 at the scales opts.drawT (default 0.03,
  * 0.01, 0.003, 0.001), each with t, alphas and shape (roundnessS4 on a shapeGrid^2 grid of one cell).
@@ -502,6 +519,18 @@ export function openEndInfo(samples, tau1) {
 export function candidate2(tau, opts = {}) {
   const c1 = candidate1(tau, opts.genus1 || {});
   if (!c1.event) return { tau, c1, edge: null, event: null };
+  if (c1.event.double) {
+    // a double arrival (on a wall of F_6): the genus 2 edge has length 0. All three candidates lie on the
+    // genus 1 curve of candidate 1, with three ripe rho-pairs: the branch point alpha and the two nodes.
+    // In the limit from either side alpha_2 -> node a, so candidate 2 (alpha_1 + alpha_2) is candidate 1
+    // (alpha + node a), candidate 3 is alpha + node b, and the other choice is node a + node b.
+    const al = c1.alphas, ev = c1.event;
+    const pts = { a1: { lam: al[0], nu: [0, 0] }, a2: symPoint(al, ev.lamNode), node: symPoint(al, ev.double.lamNode) };
+    const basis = torusBasis(ev.t, c1.frame.tau1);
+    const choices = [['a1', 'a2'], ['a1', 'node'], ['a2', 'node']].map(([x, y]) => ({ pair: [x, y], syms: [pts[x], pts[y]], ...candidate(al, basis, [pts[x], pts[y]]) }));
+    const event = { t: ev.t, s: 0, alphas: al, W: c1.W, lamNode: ev.double.lamNode, gap: 0, name: ev.double.name, double: true };
+    return { tau, frame: c1.frame, c1, edge: null, event, alphas: al, choices, double: true };
+  }
   const edge = genus2Edge(c1, opts.genus2 || {});
   const event = edge.events[0] || null;
   if (!event) {
@@ -600,7 +629,13 @@ export function treeOf(C, { n0 = 24 } = {}) {
     samples.push({ edge: 1, x: 1 + Math.log(sm.r) / Math.log(rEnd), t: sm.t, W: 2 * sm.W, alphas: al,
       views: [{ key: `alpha,${a}`, syms: [{ lam: al[0], sign: 1 }, symOf(al, pa)], lattice: paritySublattice(torusBasis(sm.t, tau1), par), ripe: false }] });
   }
-  if (ev1 && c1.lattice) {
+  if (ev1 && c1.lattice && C.double) {
+    // a double arrival: candidates 1 (= 2), 3 and the other choice on the genus 1 curve (keys double:...)
+    samples.push({ edge: 1, x: 2, t: ev1.t, W: c1.W, alphas: c1.alphas,
+      views: C.choices.map((ch) => ({ key: `double:${ch.pair.join()}`, syms: ch.syms.map((p) => symOf(c1.alphas, p)), lattice: ch.lattice, ripe: true })),
+      node: 'candidates 1, 2, 3 (double arrival)' });
+    nodes.push({ index: samples.length - 1, label: 'candidates 1, 2, 3' });
+  } else if (ev1 && c1.lattice) {
     samples.push({ edge: 1, x: 2, t: ev1.t, W: c1.W, alphas: c1.alphas,
       views: [{ key: 'candidate 1', syms: c1.syms.map((p) => symOf(c1.alphas, p)), lattice: c1.lattice, ripe: true }], node: 'candidate 1' });
     nodes.push({ index: samples.length - 1, label: 'candidate 1' });

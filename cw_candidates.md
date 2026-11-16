@@ -97,13 +97,19 @@ Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in
 12. F12: The open end is a branched double cover of the round sphere.
    When the genus 2 edge reaches the open end without an arrival, candidate 2 (the two pairs of branch points as Sym points, on the doubled lattice) at scale t = sqrt|α_1 α_2| tends to the quotient map T^2 → T^2/±1 ≅ S^2 of the external torus onto a round 2-sphere, so W → 8π.
    Read in S^4 after a Möbius normalization, the distance from a round 2-sphere is O(t^{1/2}) and the area tends to 2 × 4π, with no concentration of area (no bubbling); the branch points are the four half-periods of the doubled lattice, and f(−z) − f(z) → 0.
-   Checked: numerically at internal τ = 0.2 + 1.3i, 0.5 + 0.9i, 1.6i and 2i, for t = 0.03 down to 0.001; not proved.
+   Checked: numerically at internal τ = 0.2 + 1.3i, 1.6i and 2i, for t = 0.03 down to 0.001; not proved.
 13. F13: Before ripeness the immersion is a plane, equivariant under homotheties.
    With u_j the eigenvector of ζ(0, λ_j), which is also an eigenvector of the monodromy, ψ_j(z + w) = μ_j(w) ψ_j(z), and Q(μa, μb) = diag(μ, conj μ) Q(a, b) gives f(z + w) = μ_1(w) f(z) μ_2(w)^{-1} for w in the internal lattice.
    At the points of a marked pair off S^1 the multipliers are real: such a pair is (P, ρσP), and the resonance condition μ(P) = μ(ρσP) = conj μ(P) forces μ(P) to be real. Branch points have μ = ±1.
    So the lattice acts by homotheties of R^4 about 0, f(z + w) = c(w) f(z) with c(w) = μ_1(w)/μ_2(w) real, and the Sym points are ripe (the torus closes on the lattice) exactly when c ≡ 1. This is the analogue of Sym–Bobenko without the closing conditions, where the lattice acts by rigid motions.
    P and Q = ρσP give different planes (the two eigenlines over λ_P), which agree when the pair arrives as a σ-node.
    Checked: numerically (f(z + e) = c f(z) with the same real c at two points z, to 1e-8, on the genus 0, 1 and 2 edges at 0.45 + 0.95i), and the argument above.
+14. F14: Double arrivals on the walls of F_6.
+   Where the two classes after the opened one are equally long (Re τ = 1/2 in the chamber 123, and its images), both of their pairs arrive at S^1 at the same point of the genus 1 edge, and the genus 2 edge has length 0.
+   Then all three candidates lie on the genus 1 curve, which has three ripe ρ-pairs (α and the two σ-nodes); they are the three choices of two of them. Candidate 2 is candidate 1, candidate 3 is α + the other node, and the third choice is the two nodes.
+   They have the same W, and the candidates just off the wall tend to them. At 0.5 + 0.9i the external τ of candidate 3 is the mirror image of that of candidate 1, and the third choice is rectangular (external τ = 2 Im τ · i).
+   Checked: numerically at 0.5 + 0.9i, −0.5 + 1.2i, 0.5 + 1.4i, and by continuity from 0.499 + 0.9i.
+   The third choice has two σ-nodes as Sym points, so it lies on a round 3-sphere (F11): it is a CMC torus in S^3, with a rectangular external τ, and so a torus in R^3 after stereographic projection (the app's automatic projection recognizes the 3-sphere). This bears on open questions 4 and 5.
 
 ## Open questions
 
