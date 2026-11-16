@@ -24,6 +24,7 @@ import { killingField } from './cmc.js';
 import { PairIntegrator, leftEigenvector, nuAt } from './gensym.js';
 import { leafData, willmoreFrame } from './leaf.js';
 import { WhithamCurve, ellVector } from './whitham.js';
+import { openEndTau } from './genus2.js';
 
 const cmul = ([a, b], [c, d]) => [a * c - b * d, a * d + b * c];
 const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
@@ -342,7 +343,8 @@ export function genus2Anchor(r, lamNode, tau1, eps = 1e-3) {
  * Whitham curve (the period plane fixed up to scale: the internal lattice, scaled) in the direction in
  * which alpha_2 leaves the circle, and continue the pair of the remaining class from its genus 1 position
  * at the event (lifted by nu_2 = nu_1 sqrt(-conj lam_0) (lam - lam_0)) until it arrives at S^1.
- * Returns { anchor, samples: [{ s, alphas, W }], events: [{ s, alphas, k, W, lamNode, P, Q, gap }], end }.
+ * Returns { anchor, samples: [{ s, alphas, W }], events: [{ s, alphas, k, W, lamNode, P, Q, gap }], end,
+ *   openEnd (openEndInfo, when the edge ends near the open end without an arrival) }.
  */
 export function genus2Edge(c1, { eps = 1e-3, ds = 0.02, sMax = 6, maxEvents = 1 } = {}) {
   const tau1 = c1.frame.tau1, ev = c1.event;
@@ -420,7 +422,31 @@ export function genus2Edge(c1, { eps = 1e-3, ds = 0.02, sMax = 6, maxEvents = 1 
     ref = R.ell;
     samples.push({ s, alphas: p.alphas, W: Wat(p.alphas, R.k), pair: R.cls });
   }
-  return { anchor, samples, events, end };
+  const openEnd = events.length ? null : openEndInfo(samples, tau1);
+  return { anchor, samples, events, end, openEnd };
+}
+
+/**
+ * Where the genus 2 edge ends without an arrival: is it the open end (both branch points to 0, genus 2
+ * paper, section "The open ends")? In the rescaled coordinate lam = t check-lam, t = sqrt|alpha_1 alpha_2|,
+ * the roots tend to check-alpha, 1/check-alpha, the curve to the elliptic curve check-nu^2 = check-lam
+ * (check-lam - check-alpha)(check-lam - 1/check-alpha), and W to 4 pi (8 pi on a doubled lattice); the limit
+ * of the candidates is a branched double cover of the sphere. The open-end tau of check-alpha (genus2.js)
+ * must tend to the internal tau. Returns null unless the last sample has t < 0.15, else { t, alpha
+ * (check-alpha_1), tau (open-end tau, reduced into F_1), tauError (against the reduced internal tau), WRatio
+ * (W_int / 4 pi at the last sample) }.
+ */
+export function openEndInfo(samples, tau1) {
+  if (!samples.length) return null;
+  const sm = samples[samples.length - 1], [a1, a2] = sm.alphas, p = cmul(a1, a2);
+  const t = Math.sqrt(Math.hypot(...p));
+  if (!(t < 0.15)) return null;
+  const ph = Math.atan2(p[1], p[0]) / 2, rot = [Math.cos(-ph), Math.sin(-ph)];
+  const alpha = cmul(a1, rot).map((x) => x / t);
+  const tau = reduceTau(openEndTau(alpha)), ref = reduceTau(tau1);
+  // tau and its mirror image -conj(tau) describe the same conformal class up to orientation
+  const tauError = Math.min(Math.hypot(tau[0] - ref[0], tau[1] - ref[1]), Math.hypot(tau[0] + ref[0], tau[1] - ref[1]));
+  return { t, alpha, tau, tauError, WRatio: sm.W / (4 * Math.PI) };
 }
 
 /**
@@ -434,7 +460,16 @@ export function candidate2(tau, opts = {}) {
   if (!c1.event) return { tau, c1, edge: null, event: null };
   const edge = genus2Edge(c1, opts.genus2 || {});
   const event = edge.events[0] || null;
-  if (!event) return { tau, c1, edge, event: null };
+  if (!event) {
+    // no arrival: near the open end, candidate 2 (the two pairs of branch points as Sym points) at the
+    // last point of the edge approximates the limit, a branched double cover of the sphere
+    if (!edge.openEnd) return { tau, frame: c1.frame, c1, edge, event: null };
+    const last = edge.samples[edge.samples.length - 1], al = last.alphas;
+    const k = ellVector(al).map(([x, y]) => [x, -y]);
+    const syms = [{ lam: al[0], nu: [0, 0] }, { lam: al[1], nu: [0, 0] }];
+    const near = { pair: ['a1', 'a2'], syms, ...candidate(al, dualBasis(k[0], k[1]), syms) };
+    return { tau, frame: c1.frame, c1, edge, event: null, openEnd: edge.openEnd, alphas: al, choices: [near] };
+  }
   const al = event.alphas;
   const pts = { a1: { lam: al[0], nu: [0, 0] }, a2: { lam: al[1], nu: [0, 0] }, node: symPoint(al, event.lamNode) };
   const basis = dualBasis(event.k[0], event.k[1]);

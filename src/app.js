@@ -484,6 +484,12 @@ function candidate2Note(R) {
   const order = `Class order ${R.frame.order}.`;
   const c = (x) => `${fixed(x[0], 4)} ${x[1] < 0 ? '−' : '+'} ${fixed(Math.abs(x[1]), 4)}i`;
   const one = R.c1 ? `Candidate 1: the pair of class ${R.c1.cls} arrives at α = −${fixed(R.c1.r, 6)}; W = ${fixed(R.c1.W / PI ** 2, 4)} π².` : 'No candidate 1.';
+  if (!R.event && R.openEnd) {
+    const o = R.openEnd;
+    return `${order}\n${one}\nGenus 2: no arrival before the open end (both branch points go to 0). There candidates 2 and 3 become a branched double cover of the sphere, W = 8π.\n` +
+      `At the last point (t = ${fixed(o.t, 4)}): W/8π = ${fixed(o.WRatio, 4)}; open-end τ = ${c(o.tau)} (internal ${o.tauError < 0.05 ? 'matches' : 'differs'} to ${fixed(o.tauError, 3)}).\n` +
+      `Drawn: candidate 2 there (W = ${fixed(R.choices[0].W / PI ** 2, 4)} π², closing ${R.choices[0].defects.closing.toExponential(0)}).`;
+  }
   if (!R.event) return `${order}\n${one}\nGenus 2: no arrival (${R.end.why}).`;
   const lines = R.choices.map((ch) => `  ${CHOICE_NAMES[ch.pair.join()]} (${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')}): external τ = ${c(ch.tauExt)}, closing ${ch.defects.closing.toExponential(0)}`);
   return `${order}\n${one}\nGenus 2: the remaining pair arrives at s = ${fixed(R.event.s, 4)}; W = ${fixed(R.choices[0].W, 4)} = ${fixed(R.choices[0].W / PI ** 2, 4)} π² (doubled lattice) for every choice of Sym points:\n${lines.join('\n')}\nComputed in ${R.ms.toFixed(0)} ms.`;
@@ -543,9 +549,9 @@ function requestCandidate(tau) {
       if (R.which === 2) {
         cand.last = candidate2Note(R);
         $('candNote').textContent = cand.last;
-        candPad.set({ tau: R.tau, blocked: !R.event });
-        $('cand2Pick').hidden = !R.event;
-        if (!R.event) return;
+        candPad.set({ tau: R.tau, blocked: !R.event && !R.openEnd });
+        $('cand2Pick').hidden = !R.event && !R.openEnd;
+        if (!R.event && !R.openEnd) return;
         cand.c2 = R;
         const keep = +$('cand2Pick').value || 0;
         $('cand2Pick').innerHTML = R.choices.map((ch, i) => `<option value="${i}">${CHOICE_NAMES[ch.pair.join()]} (${ch.pair.map((p) => PAIR_NAMES[p]).join(' + ')})</option>`).join('');

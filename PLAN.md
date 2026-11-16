@@ -115,6 +115,12 @@ Each milestone ends in a check that can be verified.
    At 0.2 + 1.3i there is no candidate 2 on the genus 2 edge: every tracked pair (vectors m + nτ, |m| ≤ 2, n ≤ 2) moves away from S^1 until the edge reaches the α → 0 corner.
    Open: the arrivals in genus 2 lie close to the α → 0 corner (|α| ~ 0.05–0.3), where WhithamCurve stops (newton); at 0.4 + i Node finds the arrival at s = 0.935 and the browser does not (the curve ends first), so the corner needs better numerics (the rescaled coordinate λ/t of the genus 2 paper). The genus 2 anchor Newton diverges for some τ (0.4 + 0.97i, near i), and for τ' on the imaginary axis (0 + 1.15i, 1.6i) the remaining pair is not continued into genus 2. The third pair at candidate 1 can already be on S^1 (0.5 + 0.9i), where an arrival from off S^1 is not the right event.
 
+5. The open ends (November 2026).
+   When the genus 2 edge reaches the open end (both branch points to 0; genus 2 paper, section "The Open Ends") before an arrival, `openEndInfo` rescales by t = sqrt|α_1 α_2|: the open-end τ of the rescaled root (genus2.js) tends to the internal τ with error O(t), and W_int to 4π (8π on the doubled lattice).
+   `candidate2` then returns candidate 2 at the last point of the edge; the app says that candidates 2 and 3 become a branched double cover of the sphere there (Ross), and draws it.
+   Observed at 0.2 + 1.3i (t = 0.038): the drawn torus is two nearly round spheres joined by a small neck, W = 0.988 · 8π, and its fourth principal variance in R^4 tends to 0 (0.15, 0.04, 0.03 along the end of the edge). Whether this is the branched double cover after a normalization (a Möbius transformation, or a rescaling about the neck) is not yet checked.
+   Next: continue the edges in the rescaled coordinate λ/t, so that arrivals close to the open end are found reliably (at 0.4 + i the arrival lies at |α| ≈ 0.1 and is lost in the browser), and take the limit t -> 0 itself.
+
 ## TODO
 
 1. Rewrite the README for cw-families: it still describes cmc-immersion (title, controls, layout, the removed panels).
