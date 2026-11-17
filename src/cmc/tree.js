@@ -353,13 +353,33 @@ export const symPoint = (alphas, lam, nu = null) => ({ lam, nu: nu ?? nuAt(alpha
 export function candidate1(tau, opts = {}) {
   // tau may be any point of the upper half plane (F_6 with labelled classes): normalize first
   const frame = internalFrame(tau), tau1 = frame.tau1;
-  const edge = genus1Edge(tau1, opts);
+  // the edge is followed to the second event, for the branch that does not open the node
+  const edge = genus1Edge(tau1, { maxEvents: 2, ...opts });
   const event = edge.events[0] || null;
-  if (!event) return { tau, frame, edge, event: null };
+  if (!event) return { tau, frame, edge, event: null, branch: null };
   event.cls = frame.classes[event.name];
   const alphas = [[-event.r, 0]];
   const syms = [{ lam: alphas[0], nu: [0, 0] }, symPoint(alphas, event.lamNode)];
-  return { tau, frame, edge, event, alphas, syms, ...candidate(alphas, torusBasis(event.t, tau1), syms) };
+  return { tau, frame, edge, event, alphas, syms, ...candidate(alphas, torusBasis(event.t, tau1), syms), branch: genus1Branch(edge, event, frame) };
+}
+
+/**
+ * The "(or not)" branch at candidate 1: the genus 1 edge continued past the arrival without opening the
+ * node. The arrived pair stays over S^1 (two points), and the branch ends at the next sigma-node event of a
+ * marked pair: the other pair arriving, or the arrived pair leaving S^1 again. There the genus 1 curve
+ * has two ripe rho-pairs, alpha and the node: candidate 1' (a provisional name).
+ * Returns null at a double arrival or when there is no first event, else { event (or null: the edge
+ * ended without one, see end), alphas, syms, ...candidate }.
+ */
+function genus1Branch(edge, event, frame) {
+  if (!event || event.double) return null;
+  const ev = edge.events[1];
+  if (!ev || ev.r >= event.r) return { event: null, end: edge.end };
+  ev.cls = frame.classes[ev.name];
+  ev.leaving = ev.name === event.name; // the arrived pair leaves S^1 again (else the other pair arrives)
+  const alphas = [[-ev.r, 0]];
+  const syms = [{ lam: alphas[0], nu: [0, 0] }, symPoint(alphas, ev.lamNode)];
+  return { event: ev, alphas, syms, ...candidate(alphas, torusBasis(ev.t, frame.tau1), syms) };
 }
 
 // ---------------------------------------------------------------- genus 2 edge and candidate 2
@@ -724,6 +744,29 @@ export function treeOf(C, { n0 = 24 } = {}) {
         views: C.choices.map((ch) => ({ key: ch.pair.join(), syms: ch.syms.map((p) => symOf(C.alphas, p)), lattice: ch.lattice, ripe: true })), node: 'candidates 2 and 3' });
       nodes.push({ index: samples.length - 1, label: 'candidates 2, 3' });
     } else if (C.openEnd) nodes.push({ index: samples.length - 1, label: 'open end' });
+  }
+  // the branch that does not open the node at candidate 1 (edge 3, drawn over the span of genus 2):
+  // views alpha + the arrived pair (over S^1: unimodular multipliers, the lattice acts by rotations) and
+  // alpha + the other pair; at its end candidate 1'
+  const br = c1.branch;
+  if (ev1 && br) {
+    const r2 = br.event ? br.event.r : Math.min(...edge1.samples.map((x) => x.r));
+    const parA = par, parB = [(sOne[0] + CLASS_PQ[b][0]) & 1, (sOne[1] + CLASS_PQ[b][1]) & 1];
+    for (const sm of edge1.samples) {
+      if (!(sm.r < ev1.r) || sm.r < r2) continue;
+      const al = [[-sm.r, 0]], basis = torusBasis(sm.t, tau1);
+      samples.push({ edge: 3, x: 2 + Math.log(ev1.r / sm.r) / Math.log(ev1.r / r2), t: sm.t, r: sm.r, W: 2 * sm.W, alphas: al,
+        views: [
+          { key: 'branch:alpha,arrived', syms: [{ lam: al[0], sign: 1 }, symOf(al, sm.pts[a].P)], lattice: paritySublattice(basis, parA), parity: parA, ripe: false },
+          { key: 'branch:alpha,other', syms: [{ lam: al[0], sign: 1 }, symOf(al, sm.pts[b].P)], lattice: paritySublattice(basis, parB), parity: parB, ripe: false },
+        ] });
+    }
+    if (br.event && br.lattice) {
+      samples.push({ edge: 3, x: 3, t: br.event.t, r: br.event.r, W: br.W, alphas: br.alphas,
+        views: [{ key: 'branch:candidate', syms: br.syms.map((p) => symOf(br.alphas, p)), lattice: br.lattice, ripe: true }],
+        node: `candidate 1′ (the pair of class ${br.event.cls} ${br.event.leaving ? 'leaves' : 'arrives at'} S¹)` });
+      nodes.push({ index: samples.length - 1, label: 'candidate 1′' });
+    }
   }
   return { frame, samples, nodes, end: edge2 ? edge2.end : edge1.end };
 }

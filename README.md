@@ -34,8 +34,9 @@ A link `#k=Re,Im,2` computes candidates 1, 2 and 3 for that internal τ, and `#k
   request wins). *Find candidates 2, 3* and *Find candidate 1* compute the tree. The picker chooses
   the pair of Sym points at the current point of the tree.
 - **Tree view:** W (on the closing lattice) along the path: the opening on the left axis, the genus 1
-  edge on the first third, the genus 2 edge on the rest. Drag the dot (it snaps to the nodes) or use
-  the arrow keys (shift: ten steps); double-click shows W from 0. The note below gives the factors
+  edge on the first third, the genus 2 edge on the rest; dashed blue, the genus 1 edge continued
+  without opening the node, to candidate 1′. Drag the dot (it snaps to the nodes) or use the arrow keys
+  (shift: ten steps; up and down switch to and from the dashed branch); double-click shows W from 0. The note below gives the factors
   c₁, c₂ with f(z + eₖ) = cₖ f(z) on the drawn cell (1 at the candidates).
 - **λ-plane:** the branch points α; Sym points that are branch points are drawn blue, other Sym
   points are blue squares. Dragging a branch point moves along the tree (in genus 2 to the curve's own

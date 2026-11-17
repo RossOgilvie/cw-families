@@ -2,7 +2,9 @@
 // the opening of the pair for 1 on the left axis, the genus 1 edge on the first third of the width (to the
 // first arrival, candidate 1), the genus 2 edge on the other two thirds (to the arrival of candidates 2
 // and 3, or the open end). The genus 0 edge is not shown. Path coordinates x (treeOf): genus 1 on [1, 2],
-// genus 2 on [2, 3].
+// genus 2 on [2, 3]. The branch that does not open the node at candidate 1 (edge 3, the genus 1 edge
+// continued to candidate 1') is drawn dashed and blue over the same span as genus 2, from candidate 1; the
+// up and down arrows switch between it and the genus 2 edge.
 // W is in units of pi^2, on the closing (doubled) lattice. A dot marks the sample whose immersion is shown;
 // it can be dragged along the path (snapping to the nodes) or stepped with the arrow keys.
 
@@ -46,18 +48,34 @@ export class TreeView {
     return { w, h, pad, lo, hi, X: (x) => pad.l + frac(x) * (w - pad.l - pad.r), Y: (W) => h - pad.b - ((W / Math.PI ** 2 - lo) / (hi - lo)) * (h - pad.t - pad.b) };
   }
 
-  /** The sample nearest to pixel column px (snapping to a node within 8 px). */
-  _pick(px) {
-    const S = this.tree.samples, { X } = this._geom();
+  /**
+   * The sample nearest to the pixel (px, py), snapping to a node within 9 px. Horizontal distance counts
+   * more than vertical, so that dragging along an edge follows it; the vertical part chooses between the
+   * genus 2 edge and the branch where both run over the same span.
+   */
+  _pick(px, py) {
+    const S = this.tree.samples, { X, Y } = this._geom();
     let best = 0, bd = Infinity;
-    S.forEach((s, i) => { if (!shown(s)) return; const d = Math.abs(X(s.x) - px); if (d < bd) { bd = d; best = i; } });
-    for (const n of this.tree.nodes) if (Math.abs(X(S[n.index].x) - px) < 8) return n.index;
+    S.forEach((s, i) => { if (!shown(s)) return; const d = Math.hypot(X(s.x) - px, 0.35 * (Y(s.W) - py)); if (d < bd) { bd = d; best = i; } });
+    for (const n of this.tree.nodes) if (Math.hypot(X(S[n.index].x) - px, Y(S[n.index].W) - py) < 9) return n.index;
     return best;
+  }
+
+  /** The samples along the branch of sample i, in order: the main path, or candidate 1 and edge 3. */
+  _path(i) {
+    const S = this.tree.samples;
+    const idx = S.map((_, k) => k);
+    if (S[i] && S[i].edge === 3) {
+      const c1 = this.tree.nodes.find((n) => n.label === 'candidate 1');
+      return [...(c1 ? [c1.index] : []), ...idx.filter((k) => S[k].edge === 3)];
+    }
+    return idx.filter((k) => shown(S[k]) && S[k].edge !== 3);
   }
 
   _bind() {
     const c = this.canvas;
     const px = (e) => e.clientX - c.getBoundingClientRect().left;
+    const py = (e) => e.clientY - c.getBoundingClientRect().top;
     const emit = (i, dragging) => {
       if (i === this.index && dragging) return;
       this.index = i;
@@ -70,11 +88,11 @@ export class TreeView {
       c.setPointerCapture(e.pointerId);
       c.focus();
       e.preventDefault();
-      emit(this._pick(px(e)), true);
+      emit(this._pick(px(e), py(e)), true);
     });
     c.addEventListener('pointermove', (e) => {
       c.style.cursor = this.tree ? (this.drag ? 'grabbing' : 'pointer') : 'default';
-      if (this.drag) emit(this._pick(px(e)), true);
+      if (this.drag) emit(this._pick(px(e), py(e)), true);
     });
     const up = () => {
       if (!this.drag) return;
@@ -85,11 +103,21 @@ export class TreeView {
     c.addEventListener('pointercancel', up);
     c.addEventListener('dblclick', (e) => { e.preventDefault(); this.full = !this.full; this.draw(); });
     c.addEventListener('keydown', (e) => {
-      if (!this.tree || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+      if (!this.tree || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
       e.preventDefault();
-      const S = this.tree.samples, n = S.length, d = e.key === 'ArrowRight' ? 1 : -1;
-      const first = Math.max(0, S.findIndex(shown));
-      emit(Math.max(first, Math.min(n - 1, this.index + d * (e.shiftKey ? 10 : 1))), false);
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        // switch between the main path and the branch, at the nearest path coordinate x
+        const S = this.tree.samples, cur = S[this.index];
+        if (!cur) return;
+        const onBranch = cur.edge === 3, other = this.tree.samples.map((_, k) => k).filter((k) => (onBranch ? S[k].edge === 2 : S[k].edge === 3));
+        if (!other.length || (!onBranch && cur.x < 2)) return;
+        emit(other.reduce((b, k) => (Math.abs(S[k].x - cur.x) < Math.abs(S[b].x - cur.x) ? k : b), other[0]), false);
+        return;
+      }
+      // along the branch the dot is on (at candidate 1 the right arrow follows the genus 2 edge)
+      const path = this._path(this.index), d = e.key === 'ArrowRight' ? 1 : -1;
+      const at = Math.max(0, path.indexOf(this.index));
+      emit(path[Math.max(0, Math.min(path.length - 1, at + d * (e.shiftKey ? 10 : 1)))], false);
     });
   }
 
@@ -102,7 +130,7 @@ export class TreeView {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const css = getComputedStyle(c);
     const col = (n, f) => css.getPropertyValue(n).trim() || f;
-    const C = { ink: col('--ink', '#27231E'), muted: col('--muted', '#6A6257'), rule: col('--rule', '#CFC5B0'), accent: col('--accent', '#9E3F24'), shade: col('--shade', '#EAE4D6') };
+    const C = { ink: col('--ink', '#27231E'), muted: col('--muted', '#6A6257'), rule: col('--rule', '#CFC5B0'), accent: col('--accent', '#9E3F24'), shade: col('--shade', '#EAE4D6'), blue: col('--blue', '#3D5A80') };
     const FONT = "'EB Garamond', Georgia, serif";
     const { w, h, pad, lo, hi, X, Y } = this._geom();
     ctx.clearRect(0, 0, w, h);
@@ -141,15 +169,28 @@ export class TreeView {
       e.forEach((s, i) => (i ? ctx.lineTo(X(s.x), Y(s.W)) : ctx.moveTo(X(s.x), Y(s.W))));
       ctx.stroke();
     }
+    // the branch that does not open the node (dashed, from candidate 1)
+    const br = S.filter((s) => s.edge === 3), c1n = this.tree.nodes.find((n) => n.label === 'candidate 1');
+    if (br.length && c1n) {
+      ctx.save();
+      ctx.strokeStyle = C.blue; ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      [S[c1n.index], ...br].forEach((s, i) => (i ? ctx.lineTo(X(s.x), Y(s.W)) : ctx.moveTo(X(s.x), Y(s.W))));
+      ctx.stroke();
+      ctx.restore();
+    }
     // nodes
     ctx.font = `italic 11px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     for (const n of this.tree.nodes) {
       const s = S[n.index], x = X(s.x), y = Y(s.W);
       ctx.fillStyle = '#fff'; ctx.strokeStyle = C.ink; ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = C.muted;
+      ctx.fillStyle = S[n.index].edge === 3 ? C.blue : C.muted;
       ctx.textAlign = x > w - 50 ? 'right' : x < pad.l + 25 ? 'left' : 'center';
-      ctx.fillText(n.label, x > w - 50 ? x - 4 : x < pad.l + 25 ? x + 3 : x, y - 5);
+      // the end of the branch is labelled below its node (it can be close to candidates 2 and 3)
+      const below = S[n.index].edge === 3;
+      ctx.textBaseline = below ? 'top' : 'bottom';
+      ctx.fillText(n.label, x > w - 50 ? x - 4 : x < pad.l + 25 ? x + 3 : x, below ? y + 5 : y - 5);
     }
     // the dot
     if (this.index >= 0 && this.index < S.length) {

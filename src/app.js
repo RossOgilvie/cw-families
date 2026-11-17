@@ -330,9 +330,14 @@ function show(res) {
   const argQ = hopfArg(state.alphas, state.theta0);
   const size = Math.max(res.bbox[3] - res.bbox[0], res.bbox[4] - res.bbox[1], res.bbox[5] - res.bbox[2]) / (2 * state.H);
   if (state.gen.on && state.cell && cand.tree && res.nx > 1 && res.ny > 1) {
-    const cf = cellFactors(res), ripe = cf.every((x) => Math.abs(x.c - 1) < 1e-3);
-    $('treeNote').textContent = `${cand.sampleNote}: f(z + e₁) = c₁ f(z), f(z + e₂) = c₂ f(z) on the cell with c = ${cf.map((x) => fixed(x.c, 4)).join(', ')}` +
-      `${ripe ? '' : ' (homotheties of ℝ⁴ about 0)'}${Math.max(...cf.map((x) => x.res)) > 1e-3 ? ` (not proportional: ${Math.max(...cf.map((x) => x.res)).toExponential(1)})` : ''}.`;
+    // f(z + e) = mu_1 f(z) mu_2^{-1} (F13): real multipliers give homotheties c, unimodular ones (a pair
+    // over S^1) rotations of R^4 about 0 (|f| is kept)
+    const cf = cellFactors(res), ripe = cf.every((x) => Math.abs(x.c - 1) < 1e-3 && x.res < 1e-3);
+    const prop = cf.every((x) => x.res < 1e-3), rot = !prop && cf.every((x) => Math.abs(x.norm - 1) < 1e-3);
+    $('treeNote').textContent = cand.sampleNote + (prop
+      ? `: f(z + e₁) = c₁ f(z), f(z + e₂) = c₂ f(z) on the cell with c = ${cf.map((x) => fixed(x.c, 4)).join(', ')}${ripe ? '' : ' (homotheties of ℝ⁴ about 0)'}.`
+      : rot ? ': the lattice acts by rotations of ℝ⁴ about 0 (|f(z + eₖ)| = |f(z)|; the multipliers are unimodular).'
+        : `: f(z + eₖ) = μ₁ f(z) μ₂⁻¹ with |f(z + eₖ)| / |f(z)| = ${cf.map((x) => fixed(x.norm, 4)).join(', ')}.`);
   }
   if (state.gen.on) {
     showStatus(`Genus ${g} · two Sym points, f in ℝ⁴ (${{ sphere: 'on a 3-sphere: stereographic', balanced: 'not on a 3-sphere: Möbius-balanced', pca: 'principal axes', stereo4: 'stereographic from e₄', drop4: 'drop x₄' }[res.projection]}) · κ₀ = ${fmt(kappa0(state.alphas), 3)}` +
@@ -382,11 +387,11 @@ function treeDrag(s, dragging) {
   const T = cand.tree, sm = T && state.cell ? T.samples[cand.index] : null;
   if (!sm || sm.edge === 0 || s.alphas.length !== sm.alphas.length || s.alphas.length !== genus()) { cand.dragFrom = null; return false; }
   if (anim) stopAnim();
-  if (sm.edge === 1) {
+  if (sm.edge === 1 || sm.edge === 3) {
     const r = Math.hypot(...s.alphas[0]);
     let idx = cand.index, bd = Infinity;
     T.samples.forEach((x, i) => {
-      if (x.edge !== 1) return;
+      if (x.edge !== sm.edge) return;
       const d = Math.abs(Math.log(Math.hypot(...x.alphas[0]) / r));
       if (d < bd) { bd = d; idx = i; }
     });
@@ -511,7 +516,7 @@ const CHOICE_NAMES = { 'a1,a2': 'Candidate 2', 'a1,node': 'Candidate 3', 'a2,nod
 function candidate2Note(R) {
   const order = `Class order ${R.frame.order}.`;
   const c = (x) => `${fixed(x[0], 4)} ${x[1] < 0 ? '−' : '+'} ${fixed(Math.abs(x[1]), 4)}i`;
-  const one = R.c1 ? `Candidate 1: the pair of class ${R.c1.cls} arrives at α = −${fixed(R.c1.r, 6)}; W = ${fixed(R.c1.W / PI ** 2, 4)} π².` : 'No candidate 1.';
+  const one = (R.c1 ? `Candidate 1: the pair of class ${R.c1.cls} arrives at α = −${fixed(R.c1.r, 6)}; W = ${fixed(R.c1.W / PI ** 2, 4)} π².` : 'No candidate 1.') + branchNote(R.c1 && R.c1.branch);
   if (!R.event && R.openEnd) {
     const o = R.openEnd;
     const ext = R.choices[0];
@@ -538,7 +543,8 @@ const VIEW_NAMES = {
   'a1,node': 'Candidate 3 (α₁ + the node)', 'a2,node': 'Other choice (α₂ + the node)',
   'double:a1,a2': 'Candidate 1 = candidate 2 (α + node a)', 'double:a1,node': 'Candidate 3 (α + node b)', 'double:a2,node': 'Other choice (node a + node b)',
 };
-const viewName = (key) => VIEW_NAMES[key] || (key === 'candidate 1' ? 'Candidate 1 (α + the node)' : key.startsWith('one,') ? 'the pair for 1 + the arriving pair' : 'α + the arriving pair');
+const viewName = (key) => VIEW_NAMES[key] || (key === 'branch:candidate' ? 'Candidate 1′ (α + the node)'
+  : key === 'branch:alpha,arrived' ? 'α + the pair of candidate 1 (over S¹)' : key === 'branch:alpha,other' ? 'α + the other pair' : (key === 'candidate 1' ? 'Candidate 1 (α + the node)' : key.startsWith('one,') ? 'the pair for 1 + the arriving pair' : 'α + the arriving pair'));
 const treeView = new TreeView($('treeView'), (i, dragging) => { showSample(i); needFrame = !dragging && needFrame; changed(dragging); });
 /** Draw sample i of the tree, with the view chosen in cand2Pick (kept across samples). */
 function showSample(i) {
@@ -558,7 +564,7 @@ function showSample(i) {
   const edge = T.samples.filter((s) => s.edge === sm.edge && s.alphas.length);
   cand.path = edge.length > 1 ? { points: edge.map((s, j) => ({ s: j, alphas: s.alphas, W: s.W })), critical: [] } : null;
   showFamily();
-  cand.sampleNote = `Genus ${sm.edge}${sm.node ? `, ${sm.node}` : ''}: ${sm.edge === 1 ? `α = −${fixed(-sm.alphas[0][0], 5)}, t = ${fixed(sm.t, 5)}` : `t = ${sm.t < 0.01 ? sm.t.toExponential(2) : fixed(sm.t, 4)}`}, W = ${fixed(sm.W / PI ** 2, 4)} π² (closing lattice).\n${viewName(v.key)}: ${v.ripe ? 'ripe, a torus' : 'not ripe, a plane'}`;
+  cand.sampleNote = `${sm.edge === 3 ? 'Genus 1, not opened' : `Genus ${sm.edge}`}${sm.node ? `, ${sm.node}` : ''}: ${sm.edge === 1 || sm.edge === 3 ? `α = −${fixed(-sm.alphas[0][0], 5)}, t = ${fixed(sm.t, 5)}` : `t = ${sm.t < 0.01 ? sm.t.toExponential(2) : fixed(sm.t, 4)}`}, W = ${fixed(sm.W / PI ** 2, 4)} π² (closing lattice).\n${viewName(v.key)}: ${v.ripe ? 'ripe, a torus' : 'not ripe, a plane'}`;
   if (towardsOpenEnd()) cand.sampleNote += ' (the spikes mark the four half-periods, where the limit, the sphere covered twice, is branched)';
   $('treeNote').textContent = cand.sampleNote;
 }
@@ -597,7 +603,7 @@ function cellFactors(res) {
   const f0 = f(0), n0 = f0.reduce((a, x) => a + x * x, 0);
   return [nx - 1, (ny - 1) * nx].map((v) => {
     const g = f(v), c = g.reduce((a, x, e) => a + x * f0[e], 0) / n0;
-    return { c, res: Math.hypot(...g.map((x, e) => x - c * f0[e])) / Math.hypot(...g) };
+    return { c, res: Math.hypot(...g.map((x, e) => x - c * f0[e])) / Math.hypot(...g), norm: Math.sqrt(g.reduce((a, x) => a + x * x, 0) / n0) };
   });
 }
 $('cand2Pick').addEventListener('change', () => { if (cand.tree) { showSample(cand.index); needFrame = true; changed(false); } });
@@ -608,13 +614,19 @@ $('cand2Btn').addEventListener('click', () => {
   candPad.set({ tau: [re, im], target: null });
   requestCandidate([re, im]);
 });
+/** The branch at candidate 1 that does not open the node, as a line of the note (or ''). */
+function branchNote(b) {
+  if (!b) return '';
+  const c = (x) => `${fixed(x[0], 4)} ${x[1] < 0 ? '−' : '+'} ${fixed(Math.abs(x[1]), 4)}i`;
+  return `\nNot opened: the genus 1 edge continues until the pair of class ${b.cls} ${b.leaving ? 'leaves S¹ again' : 'arrives'} at α = −${fixed(b.r, 6)}: candidate 1′ (α + that node), W = ${fixed(b.W / PI ** 2, 4)} π², external τ = ${c(b.tauExt)}.`;
+}
 function candidateNote(R) {
   const order = `Class order ${R.frame.order}: the pair of class ${R.frame.classes.one} is opened.`;
   if (!R.event) return `${order}\nNo arrival found on the genus 1 edge (it ended at α = −${fixed(R.end.r, 4)}: ${R.end.why}).`;
   const c = (x) => `${fixed(x[0], 4)} ${x[1] < 0 ? '−' : '+'} ${fixed(Math.abs(x[1]), 4)}i`;
   return `${order}\nThe pair of class ${R.event.cls} arrives at α = −${fixed(R.event.r, 6)} (t = ${fixed(R.event.t, 5)}).\n` +
     `W = ${fixed(R.W, 4)} = ${fixed(R.W / PI ** 2, 4)} π²; external τ = ${c(R.tauExt)}` +
-    `${R.doubled ? ' (double cover)' : ''}.\nClosing defect ${R.defects.closing.toExponential(1)}; computed in ${R.ms.toFixed(0)} ms.`;
+    `${R.doubled ? ' (double cover)' : ''}.\nClosing defect ${R.defects.closing.toExponential(1)}; computed in ${R.ms.toFixed(0)} ms.` + branchNote(R.branch);
 }
 $('cand1Btn').addEventListener('click', () => {
   const re = parseNum($('tauRe').value), im = parseNum($('tauIm').value);
@@ -704,16 +716,20 @@ function requestCandidate(tau, opts = {}) {
       if (!cand.tree) { $('cand2Pick').hidden = true; $('treeNote').textContent = ''; return; }
       // the dot: kept at the same place of the path when the tree is of the same kind (e.g. while tau is
       // dragged), otherwise at the last candidate, or near the open end at t = 0.01 (closer is slow to draw)
-      const S = cand.tree.samples, nearX = (x) => S.reduce((b, s, i) => (Math.abs(s.x - x) < Math.abs(S[b].x - x) ? i : b), 0);
+      // (on the same edge: the genus 2 edge and the branch at candidate 1 share their x)
+      const S = cand.tree.samples, nearX = (x, edge) => S.reduce((b, s, i) => ((s.edge === edge) === (edge === 3) && Math.abs(s.x - x) < Math.abs(S[b].x - x) ? i : b), S.findIndex((s) => (s.edge === edge) === (edge === 3)));
       const kind = (T) => T.nodes.map((n) => n.label).join();
       let idx;
       if (o.place) {
         // a dragged genus 2 curve: the point of the genus 2 edge at its scale (clamped to the edge)
         const e2 = S.map((s, i) => [s, i]).filter(([s]) => s.edge === 2);
         idx = e2.length ? e2.reduce((b, [s, i]) => (Math.abs(Math.log(s.t / o.place)) < Math.abs(Math.log(S[b].t / o.place)) ? i : b), e2[0][1]) : S.length - 1;
-      } else if (prevSm && kind(prev) === kind(cand.tree)) idx = nearX(prevSm.x);
+      } else if (prevSm && kind(prev) === kind(cand.tree)) idx = nearX(prevSm.x, prevSm.edge);
       else if (R.openEnd) idx = S.reduce((b, s, i) => (s.edge === 2 && Math.abs(Math.log(s.t / 0.01)) < Math.abs(Math.log(S[b].t / 0.01)) ? i : b), S.length - 1);
-      else idx = cand.tree.nodes.length ? cand.tree.nodes[cand.tree.nodes.length - 1].index : S.length - 1;
+      else {
+        const main = cand.tree.nodes.filter((n) => S[n.index].edge !== 3);
+        idx = main.length ? main[main.length - 1].index : S.length - 1;
+      }
       treeView.set({ index: idx });
       if (o.show === false) { cand.index = idx; return; }
       showSample(idx);
@@ -1065,3 +1081,4 @@ function runPendingCandidate() {
 if (pendingCandidate) runPendingCandidate();
 window.cmcStarted = true; // see index.html
 window.cmcWidget = widget; // for scripted checks (headless drags)
+window.cmcTreeView = treeView;

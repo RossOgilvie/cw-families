@@ -649,9 +649,12 @@ console.log('the tree: genus 0 edge, opening at lam = -1, genus 1 edge, candidat
   // plane with f(z + e) = c f(z), c real (a homothety of R^4 about 0), the same c at different z
   {
     const D = candidate2([0.45, 0.95]), T = treeOf(D);
-    const S = T.samples;
+    const S = T.samples.filter((x) => x.edge !== 3), B = T.samples.filter((x) => x.edge === 3);
+    const c1s = T.samples[T.nodes.find((n) => n.label === 'candidate 1').index];
     check(`tree at 0.45 + 0.95i: ${S.length} samples, W increasing (${(S[0].W / Math.PI ** 2).toFixed(3)} to ${(S[S.length - 1].W / Math.PI ** 2).toFixed(3)} pi^2)`,
       S.slice(1).reduce((a, sm, i) => a + Math.max(0, S[i].W - sm.W), 0), 1e-9);
+    check(`the branch at candidate 1: ${B.length} samples, W increasing (to ${(B[B.length - 1].W / Math.PI ** 2).toFixed(3)} pi^2)`,
+      [c1s, ...B].slice(1).reduce((a, sm, i) => a + Math.max(0, [c1s, ...B][i].W - sm.W), 0), 1e-9);
     const sameLattice = (A, B) => {
       const det = A[0][0] * A[1][1] - A[0][1] * A[1][0];
       const m = B.map((v) => [(v[0] * A[1][1] - v[1] * A[1][0]) / det, (A[0][0] * v[1] - A[0][1] * v[0]) / det]);
@@ -687,6 +690,21 @@ console.log('the tree: genus 0 edge, opening at lam = -1, genus 1 edge, candidat
     check('double arrival: candidate 2 = candidate 1 (external tau)', Math.hypot(...tE(D.choices[0]).map((x, i) => x - tE(D.c1)[i])), 1e-9);
     check(`just off the wall (0.499 + 0.9i): W and the external taus of the three choices within 4e-3 of the double arrival`,
       Math.max(Math.abs(N.choices[0].W - D.c1.W) / D.c1.W, ...N.choices.map((c, i) => Math.hypot(...c.tauExt.map((x, k) => x - D.choices[i].tauExt[k])))), 4e-3);
+  }
+  // the branch at candidate 1 that does not open the node: the genus 1 edge continued to the next
+  // sigma-node event (the other pair arriving, or the arrived pair leaving S^1); candidate 1' there closes,
+  // and when the other pair arrives its classes are those of candidate 3 ([1] + b), so it has the same
+  // external tau (the parity rule)
+  {
+    const D = candidate2([0.45, 0.95]), b = D.c1.branch;
+    check(`branch at 0.45 + 0.95i: the ${b && b.event && b.event.name} pair arrives at alpha = -${b && b.event && b.event.r.toFixed(6)}, candidate 1' W = ${b && (b.W / Math.PI ** 2).toFixed(4)} pi^2, closes`,
+      b && b.event && !b.event.leaving ? b.defects.closing + b.defects.node : 1, 3e-5);
+    check("candidate 1' and candidate 3 have the same external tau (same classes)", Math.hypot(...b.tauExt.map((x, i) => x - D.choices[1].tauExt[i])), 1e-9);
+    check('candidate 1 and candidate 2 have the same external tau (same classes)', Math.hypot(...D.c1.tauExt.map((x, i) => x - D.choices[0].tauExt[i])), 1e-9);
+    const E = candidate2([0.2, 1.3], { fast: true }), e = E.c1.branch;
+    check(`branch at 0.2 + 1.3i: the arrived pair leaves S^1 again at alpha = -${e && e.event && e.event.r.toFixed(6)}, candidate 1' closes`,
+      e && e.event && e.event.leaving ? e.defects.closing + e.defects.node : 1, 3e-5);
+    check('no branch at a double arrival (0.5 + 0.9i)', candidate1([0.5, 0.9]).branch === null ? 0 : 1, 0.5);
   }
   // dragging a branch point in genus 2: locateOnTree gives back the internal tau and scale of every sample
   // of the genus 2 edge, and a perturbed curve lies on the edge of its own tau at its scale (the period
