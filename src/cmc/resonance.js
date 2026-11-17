@@ -113,8 +113,8 @@ export class QMap {
     const breaks = [0];
     for (let u = 0, guard = 0; u < 1 && guard < 20000; guard++) {
       // the step in lam, L (phi(u + h) - phi(u)) ~ L (phi'(u) h + 3 h^2) for the smooth phi, is at most
-      // 0.15 times the distance to the nearest singular point
-      const c = (0.15 * distAt(u)) / L, dph = smooth ? 6 * u * (1 - u) : 1;
+      // QMap.panel times the distance to the nearest singular point
+      const c = (QMap.panel * distAt(u)) / L, dph = smooth ? 6 * u * (1 - u) : 1;
       const hc = smooth ? (-dph + Math.sqrt(dph * dph + 12 * c)) / 6 : c;
       const h = Math.min(1 - u, 0.25, Math.max(1e-12, hc));
       u = 1 - u - h < 1e-12 ? 1 : u + h;
@@ -255,3 +255,7 @@ export function classifyPair(P, Q, tol = 1e-8) {
   const ang = Math.abs(Math.atan2(P.lam[0] * Q.lam[1] - P.lam[1] * Q.lam[0], P.lam[0] * Q.lam[0] + P.lam[1] * Q.lam[1]));
   return { kind: ang < Math.sqrt(tol) ? 'node' : 'on', dist: ang };
 }
+// the panel length of the graded quadrature mesh, as a fraction of the distance to the nearest singular
+// point. Tried 18 November 2026: 0.3 is only ~20% faster and moves the arrivals by ~1e-6 (relative); at
+// 0.45 candidate 1 is lost (the sheet of nu is not followed reliably on long panels).
+QMap.panel = 0.15;

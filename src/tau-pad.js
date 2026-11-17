@@ -172,9 +172,10 @@ export class TauPad {
         fill = `rgba(${r}, ${g}, ${b}, 0.55)`;
       }
       if (!fill) continue;
-      const [x0, y0] = P([data.xs[i] - h, data.ys[j] + h]), [x1, y1] = P([data.xs[i] + h, data.ys[j] - h]);
+      // cell edges on whole pixels, so that neighbouring cells abut without overlapping (no seams)
+      const [x0, y0] = P([data.xs[i] - h, data.ys[j] + h]).map(Math.round), [x1, y1] = P([data.xs[i] + h, data.ys[j] - h]).map(Math.round);
       ctx.fillStyle = fill;
-      ctx.fillRect(x0, y0, x1 - x0 + 0.5, y1 - y0 + 0.5);
+      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
     }
     ctx.strokeStyle = col('--blue', '#3D5A80');
     ctx.lineWidth = 1.4;
