@@ -188,7 +188,7 @@ function pairAt(tau, name, r, start) {
  * Options: rMin (stop), factor (step in r), maxEvents.
  * Returns { samples, events: [{ name, r, t, W, P, Q, lamNode }], end: { r, why } }.
  */
-export function genus1Edge(tau, { rStart = 0.9999, rMin = 0.003, factor = 0.8, maxEvents = 1, predict = true } = {}) {
+export function genus1Edge(tau, { rStart = 0.9999, rMin = 1e-4, factor = 0.8, maxEvents = 1, predict = true } = {}) {
   const t0 = 1 / Math.PI, names = ['tau', 'third'];
   const mk = markedVectors(tau);
   const lift = (p) => ({ lam: p.lam, nu: cmul(p.nu, [p.lam[0] + 1, p.lam[1]]) });
