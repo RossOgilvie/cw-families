@@ -1,27 +1,17 @@
 // Runs the surface computation off the main thread.
-// Message in:  { id, kind: 'candidate1', params: { tau } } (candidate 1 of the tree, tree.js),
+// Message in:  { id, kind: 'candidate1', params: { tau } } (candidate 1 and the tree, tree.js),
+//              { id, kind: 'candidate2', params: { tau, fast } } (candidates 1-3 and the tree),
+//              { id, kind: 'shapes', params: { choices } } (the open-end shape diagnostics),
 //              { id, params }   (params as for computeSurface; with params.gen = { lams, signs, projection }
 //              the generalized Sym surface of gensym.js), { id, kind: 'close', params },
-//              or { id, kind: 'family', params: { alphas, smax, maxSteps } } (the Whitham curve)
 // Message out: { id, result } or { id, error }
 
 import { computeSurface, closingInfo } from './cmc/cmc.js';
 import { computeGenSurface } from './cmc/gensym.js';
 import { candidate1, candidate2, treeOf, openEndShapes } from './cmc/tree.js';
-import { WhithamCurve } from './cmc/whitham.js';
 
 self.onmessage = (e) => {
   const { id, params, kind } = e.data;
-  if (kind === 'family') {
-    try {
-      const t0 = performance.now();
-      const tr = new WhithamCurve(params.alphas).trace(params.smax, params.maxSteps);
-      self.postMessage({ id, result: { ...tr, ms: performance.now() - t0 } });
-    } catch (err) {
-      self.postMessage({ id, error: String(err && err.message ? err.message : err) });
-    }
-    return;
-  }
   if (kind === 'candidate1') {
     try {
       const t0 = performance.now();
