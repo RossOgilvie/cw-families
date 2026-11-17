@@ -224,6 +224,15 @@
         <span>i</span>
       </div>
       <canvas id="candPad" aria-label="The internal τ in F₆; drag to move it and recompute candidate 1" title="Drag to move the internal τ (candidate 1 is recomputed as you go). The six copies of F₁ are labelled by the order of the classes 1 = [1], 2 = [τ], 3 = [1 + τ] by length; the shortest is opened first. The wheel zooms, shift-drag pans, double-click shows all of F₆."></canvas>
+      <div class="frow" id="mapRow" hidden><label for="mapPick">Map of F₆</label>
+        <select id="mapPick" title="A precomputed map of the internal τ (tools/f6map.mjs)">
+          <option value="regions">where candidates 2, 3 exist</option>
+          <option value="W1">W of candidate 1</option>
+          <option value="W2">W of candidates 2, 3</option>
+          <option value="W1b">W of candidate 1′</option>
+          <option value="none">none</option>
+        </select></div>
+      <p class="note" id="mapNote"></p>
       <div class="btnrow"><button class="tbtn" id="cand2Btn" type="button" title="Candidate 1, then open its node into genus 2 and follow the τ-preserving flow until the remaining pair arrives: candidates 2 and 3 (and the third choice of Sym points) on that spectral curve">Find candidates 2, 3</button>
         <select id="cand2Pick" hidden aria-label="The two generalized Sym points"></select></div>
       <div class="btnrow"><button class="tbtn" id="cand1Btn" type="button" title="Open the pair for 1 at the starting scale and follow the genus 1 edge to the first arrival of a marked pair at the unit circle">Find candidate 1</button></div>
@@ -266,11 +275,13 @@
           <option value="side">Two-sided</option>
           <option value="u">Conformal factor u</option>
           <option value="K">Gauss curvature K</option>
+          <option value="w4">Fourth coordinate (ℝ⁴)</option>
           <option value="wire">Wireframe</option>
         </select></div>
       <div class="frow"><label for="proj">ℝ<sup>4</sup> → ℝ<sup>3</sup></label>
         <select id="proj"><option value="auto">automatic</option><option value="balanced">Möbius-balanced</option><option value="pca">principal axes</option><option value="stereo4">stereographic from e₄</option><option value="drop4">drop x₄</option></select></div>
       <label class="cb"><input type="checkbox" class="chk" id="grid" checked><span>Draw parameter lines</span></label>
+      <div id="turnRows"></div>
       <div id="appearanceRows"></div>
       <div class="frow"><span>Colours</span>
         <span class="swatches">

@@ -82,7 +82,7 @@ self.onmessage = (e) => {
   try {
     if (params.gen) {
       const r = computeGenSurface({ ...params, ...params.gen });
-      self.postMessage({ id, result: r }, [r.pos.buffer, r.nrm.buffer, r.u.buffer, r.st.buffer, r.pos4.buffer]);
+      self.postMessage({ id, result: r }, [r.pos.buffer, r.nrm.buffer, r.u.buffer, r.st.buffer, r.pos4.buffer, r.w4.buffer]);
       return;
     }
     const r = computeSurface(params);

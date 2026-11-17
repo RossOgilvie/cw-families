@@ -232,14 +232,17 @@ export const projections = {
  * sphere, so a near-round surface (e.g. near the open end, a branched double cover) looks round.
  * kind 'pca': orthogonal projection of f in R^4 onto the three principal axes of the point cloud.
  * 'drop4' and 'stereo4' as in projections.
- * Returns { pos, used } with used one of 'sphere', 'balanced', 'pca', 'drop4', 'stereo4'.
+ * Returns { pos, w, used } with used one of 'sphere', 'balanced', 'pca', 'drop4', 'stereo4', and w the
+ * coordinate that the projection drops (the fourth coordinate of the image in R^4; 0 for 'sphere' and
+ * 'stereo4'), for colouring and for turning the surface in R^4 (app.js).
  */
 export function projectPoints(P, kind = 'auto') {
-  const N = P.length / 4, pos = new Float32Array(3 * N);
+  const N = P.length / 4, pos = new Float32Array(3 * N), w = new Float32Array(N);
   if (kind === 'drop4' || kind === 'stereo4') {
     const f = projections[kind];
     for (let v = 0; v < N; v++) pos.set(f(P[4 * v], P[4 * v + 1], P[4 * v + 2], P[4 * v + 3]), 3 * v);
-    return { pos, used: kind };
+    if (kind === 'drop4') for (let v = 0; v < N; v++) w[v] = P[4 * v + 3];
+    return { pos, w, used: kind };
   }
   const fin = [];
   for (let v = 0; v < N; v++) if ([0, 1, 2, 3].every((e) => Number.isFinite(P[4 * v + e]))) fin.push(v);
@@ -254,7 +257,7 @@ export function projectPoints(P, kind = 'auto') {
       const k = R / (R - yn);
       for (let a = 0; a < 3; a++) pos[3 * v + a] = k * (y[0] * B[a][0] + y[1] * B[a][1] + y[2] * B[a][2] + y[3] * B[a][3]);
     }
-    return { pos, used: 'sphere' };
+    return { pos, w, used: 'sphere' };
   }
   if (kind !== 'pca' && fin.length >= 6) {
     const { X, axes } = balancedAxes(P, fin);
@@ -265,8 +268,9 @@ export function projectPoints(P, kind = 'auto') {
     X.forEach((x, i) => {
       const k = 1 / (1 - dot5(x, p));
       for (let a = 0; a < 3; a++) pos[3 * fin[i] + a] = k * dot5(x, axes[a]);
+      w[fin[i]] = k * dot5(x, axes[3]); // the coordinate dropped (the fourth axis of the stereographic image)
     });
-    return { pos, used: 'balanced' };
+    return { pos, w, used: 'balanced' };
   }
   // principal axes
   const m = [0, 0, 0, 0];
@@ -278,12 +282,13 @@ export function projectPoints(P, kind = 'auto') {
   }
   const { vals, vecs } = jacobi(C);
   const order = [0, 1, 2, 3].sort((a, b) => vals[b] - vals[a]);
-  const B = order.slice(0, 3).map((k) => vecs.map((row) => row[k]));
+  const B = order.map((k) => vecs.map((row) => row[k]));
   for (let v = 0; v < N; v++) {
     const y = [0, 1, 2, 3].map((e) => P[4 * v + e] - m[e]);
     for (let a = 0; a < 3; a++) pos[3 * v + a] = y[0] * B[a][0] + y[1] * B[a][1] + y[2] * B[a][2] + y[3] * B[a][3];
+    w[v] = y[0] * B[3][0] + y[1] * B[3][1] + y[2] * B[3][2] + y[3] * B[3][3];
   }
-  return { pos, used: 'pca' };
+  return { pos, w, used: 'pca' };
 }
 
 /**
@@ -557,7 +562,7 @@ export function computeGenSurface(params) {
     });
   });
 
-  const { pos, used } = projectPoints(P4, params.projection ?? 'auto');
+  const { pos, w: w4, used } = projectPoints(P4, params.projection ?? 'auto');
   const pos4 = Float32Array.from(P4);
   meshNormals(pos, nx, ny, nrm);
   const bbox = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
@@ -568,7 +573,7 @@ export function computeGenSurface(params) {
     }
   }
   const t1 = (typeof performance !== 'undefined' ? performance : Date).now();
-  return { nx, ny, pos4, pos, nrm, u, st, bbox, phi, us, projection: used, stats: { ms: t1 - t0 } };
+  return { nx, ny, pos4, pos, w4, nrm, u, st, bbox, phi, us, projection: used, stats: { ms: t1 - t0 } };
 }
 
 /** Unit normals of a grid mesh by central differences (one-sided at the edges). */

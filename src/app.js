@@ -3,6 +3,7 @@
 import { Viewer } from './viewer.js';
 import { SpectralWidget, MAX_GENUS } from './spectral-widget.js';
 import { shapeFlows, kappa0, hopfArg } from './cmc/cmc.js';
+import { meshNormals } from './cmc/gensym.js';
 import { commonRootsOnCircle } from './cmc/periods.js';
 import { TauPad } from './tau-pad.js';
 import { TreeView } from './tree-view.js';
@@ -84,6 +85,7 @@ const state = {
   ...VIEW_DEFAULTS, gen: structuredClone(VIEW_DEFAULTS.gen), width: 6, height: 6,
   res: 240, hmax: 0.05, colour: 'side', grid: true, transp: 0, H: 0.5, adapt: true,
   front: '#6f8fb0', back: '#e8c9a0', bg: '#f2eee3',
+  turn: [0, 0], // turning the surface in R^4 before dropping the fourth coordinate: angles in the (x, w) and (y, w) planes
 };
 
 const genus = () => state.alphas.length;
@@ -303,6 +305,13 @@ function changed(dragging = false) {
 
 function colourValues(res) {
   if (state.colour === 'side' || state.colour === 'wire') return { vals: null, range: [0, 1] };
+  if (state.colour === 'w4') {
+    // the dropped fourth coordinate, on a diverging scale symmetric about 0
+    if (!res.w4) return { vals: null, range: [0, 1] };
+    const sorted = Array.from(res.w4).filter(Number.isFinite).sort((p, q) => p - q);
+    const m = sorted.length ? Math.max(Math.abs(sorted[Math.floor(0.02 * sorted.length)]), Math.abs(sorted[Math.floor(0.98 * (sorted.length - 1))]), 1e-9) : 1;
+    return { vals: res.w4, range: [-m, m] };
+  }
   const N = res.u.length;
   const vals = new Float32Array(N);
   for (let v = 0; v < N; v++) {
@@ -318,8 +327,34 @@ function colourValues(res) {
   return { vals, range: state.colour === 'K' ? [Math.min(q(0.1), -1e-3 * H2), H2] : [q(0.02), q(0.98)] };
 }
 
+/**
+ * Turn the projected surface in R^4 (the three coordinates shown and the fourth, dropped one, res.w4):
+ * by state.turn[0] in the (x, w) plane, then state.turn[1] in the (y, w) plane, then drop w again.
+ * Works on copies of the worker's arrays (kept in res.base), so turning needs no recomputation.
+ */
+function applyTurn(res) {
+  if (!res.w4) return;
+  if (!res.base) res.base = { pos: res.pos.slice(), nrm: res.nrm.slice(), w4: res.w4.slice(), bbox: res.bbox.slice() };
+  const [a, b] = state.turn;
+  if (!a && !b) { Object.assign(res, { pos: res.base.pos.slice(), nrm: res.base.nrm.slice(), w4: res.base.w4.slice(), bbox: res.base.bbox.slice() }); return; }
+  const N = res.nx * res.ny, P = res.base.pos, W = res.base.w4, pos = new Float32Array(3 * N), w4 = new Float32Array(N);
+  const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
+  const bbox = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+  for (let v = 0; v < N; v++) {
+    let x = P[3 * v], y = P[3 * v + 1], w = W[v];
+    [x, w] = [ca * x - sa * w, sa * x + ca * w];
+    [y, w] = [cb * y - sb * w, sb * y + cb * w];
+    pos[3 * v] = x; pos[3 * v + 1] = y; pos[3 * v + 2] = P[3 * v + 2]; w4[v] = w;
+    for (let e = 0; e < 3; e++) { const q = pos[3 * v + e]; if (Number.isFinite(q)) { bbox[e] = Math.min(bbox[e], q); bbox[e + 3] = Math.max(bbox[e + 3], q); } }
+  }
+  const nrm = new Float32Array(3 * N);
+  meshNormals(pos, res.nx, res.ny, nrm);
+  Object.assign(res, { pos, nrm, w4, bbox });
+}
+
 function show(res) {
   last = res;
+  if (state.gen.on) applyTurn(res);
   const { vals, range } = colourValues(res);
   viewer.setSurface(res, vals);
   branchMarkers(res);
@@ -491,7 +526,7 @@ function refreshAlphaValues() {
 // Candidate 1 for the internal tau: computed in its own worker; on success the spectral data, the two
 // generalized Sym points and one cell of the closing lattice are loaded. Editing the spectral data
 // afterwards leaves the candidate (the drawing goes back to the rectangular domain).
-const cand = { worker: null, id: 0, last: null, lastR: null, tau: null, busy: false, pending: null, path: null, which: 1, tree: null, index: -1, sampleNote: '' };
+const cand = { worker: null, id: 0, last: null, lastR: null, map: null, tau: null, busy: false, pending: null, path: null, which: 1, tree: null, index: -1, sampleNote: '' };
 function leaveCandidate() {
   if (!state.cell) return;
   state.cell = null;
@@ -508,6 +543,25 @@ const candPad = new TauPad($('candPad'), (t, dragging) => {
   requestCandidate(t);
 });
 candPad.set({ tau: [0.2, 1.3], mode: 'F6' });
+// the precomputed map of F_6 (tools/f6map.mjs -> data/f6map.json), if present
+const MAP_NOTES = {
+  regions: 'Shaded blue: the genus 2 edge ends at an open end before the remaining pair arrives (no candidates 2, 3); blue line: the boundary, where candidates 2 and 3 merge into the open end; grey: no candidate 1 (a tie of the first two classes).',
+  W1: 'W of candidate 1', W2: 'W of candidates 2 and 3 (at an open end: candidate 2 at t = 0.03)', W1b: 'W of candidate 1′ (the branch that does not open the node)',
+};
+function showMap() {
+  const mode = $('mapPick').value;
+  candPad.set({ map: mode === 'none' ? null : { data: cand.map, mode } });
+  const r = candPad.mapRange;
+  $('mapNote').textContent = mode === 'none' ? '' : mode === 'regions' ? MAP_NOTES.regions
+    : `${MAP_NOTES[mode]}: ${r ? `${fixed(r[0], 3)} π² (dark) to ${fixed(r[1], 3)} π² (yellow)` : 'not in the map'}; grid step ${cand.map.step}.`;
+}
+fetch(new URL('../data/f6map.json', import.meta.url)).then((r) => (r.ok ? r.json() : null)).then((d) => {
+  if (!d) return;
+  cand.map = d;
+  $('mapRow').hidden = false;
+  showMap();
+}, () => {});
+$('mapPick').addEventListener('change', showMap);
 candPad.showAll();
 const PAIR_NAMES = { a1: 'α₁', a2: 'α₂', node: 'the node' };
 // candidates 2 and 3 share the genus 2 spectral curve: 2 takes the two pairs of branch points as Sym
@@ -879,6 +933,14 @@ function slider(parent, { label, min: lo, max: hi, step, get, set, digits = 3, u
   return { refresh, row, setRange };
 }
 
+// turning in R^4: the surface is turned in the (x, w) and (y, w) planes before w is dropped (applyTurn)
+const turnSliders = [0, 1].map((i) => slider($('turnRows'), {
+  label: `4D turn ${i ? 'y' : 'x'}`, title: `Turn the surface in R⁴ in the plane of ${i ? 'y' : 'x'} and the dropped fourth coordinate`,
+  min: -PI, max: PI, step: 0.001, unit: PI, suffix: 'π', get: () => state.turn[i],
+  set: (v) => { state.turn[i] = v; if (last) show(last); },
+  reset: { title: 'Back to 0', onClick: () => { state.turn[i] = 0; turnSliders[i].refresh(); if (last) show(last); } },
+  recompute: false,
+}));
 const appearanceSliders = [
   slider($('appearanceRows'), {
     label: 'Line spacing', min: 0.02, max: 2, step: 0.001, get: () => state.gridStep,
@@ -912,7 +974,7 @@ function textureStyle(range) {
   // a wireframe is its parameter lines; transparency applies to the fill
   $('grid').disabled = wire;
   transpSlider.row.classList.toggle('hide', wire);
-  return { mode: { side: 0, u: 1, K: 2 }[state.colour] ?? 0, range, wire, grid: wire || state.grid, opacity: 1 - state.transp };
+  return { mode: { side: 0, u: 1, K: 2, w4: 2 }[state.colour] ?? 0, range, wire, grid: wire || state.grid, opacity: 1 - state.transp };
 }
 // ------------------------------------------------------------------ common roots of the differentials on S^1
 

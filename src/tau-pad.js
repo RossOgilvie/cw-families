@@ -38,6 +38,7 @@ export class TauPad {
     this.marks = [];
     this.g2 = false;       // genus 2: draw F_3 alone
     this.curves = null;    // genus 2: { nodal: [pts, ...], open: [pts, ...] }, the boundary of S^2
+    this.map = null;       // F_6 map (data/f6map.json) and what to show: { data, mode: 'regions' | 'W1' | 'W2' | 'W1b' }
     this._bind();
     new ResizeObserver(() => this.draw()).observe(canvas);
     if (document.fonts) document.fonts.load("14px 'EB Garamond'", 'τ0123').then(() => this.draw(), () => {});
@@ -148,6 +149,40 @@ export class TauPad {
     });
   }
 
+  /**
+   * The precomputed map of F_6 (tools/f6map.mjs): grid cells shaded by the kind of tree ('regions': the
+   * genus 2 edge ends at an open end, light blue; no candidate 1, grey) or coloured by a Willmore energy
+   * (viridis over its range), and the boundary between candidates 2, 3 and the open end (blue line).
+   */
+  _drawMap(ctx, P, k, C, col) {
+    const { data, mode } = this.map, h = data.step / 2;
+    const vals = [];
+    if (mode !== 'regions') for (const row of data.grid) for (const p of row) if (p && Number.isFinite(p[mode])) vals.push(p[mode]);
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    this.mapRange = vals.length ? [lo, hi] : null;
+    for (let j = 0; j < data.ys.length; j++) for (let i = 0; i < data.xs.length; i++) {
+      const p = data.grid[j][i];
+      if (!p) continue;
+      let fill = null;
+      if (mode === 'regions') {
+        if (p.kind === 'open') fill = 'rgba(61, 90, 128, 0.16)';
+        else if (p.kind === 'none' || p.kind === 'fail') fill = 'rgba(106, 98, 87, 0.25)';
+      } else if (Number.isFinite(p[mode])) {
+        const [r, g, b] = viridis(hi > lo ? (p[mode] - lo) / (hi - lo) : 0.5);
+        fill = `rgba(${r}, ${g}, ${b}, 0.55)`;
+      }
+      if (!fill) continue;
+      const [x0, y0] = P([data.xs[i] - h, data.ys[j] + h]), [x1, y1] = P([data.xs[i] + h, data.ys[j] - h]);
+      ctx.fillStyle = fill;
+      ctx.fillRect(x0, y0, x1 - x0 + 0.5, y1 - y0 + 0.5);
+    }
+    ctx.strokeStyle = col('--blue', '#3D5A80');
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    for (const [a, b] of data.boundary) { ctx.moveTo(...P(a)); ctx.lineTo(...P(b)); }
+    ctx.stroke();
+  }
+
   draw() {
     const c = this.canvas, ctx = this.ctx;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -209,6 +244,7 @@ export class TauPad {
 
     const [, yHi] = P([0, this.view[3] + 1]);
     const r3 = Math.sqrt(3) / 2;
+    if (this.map && this.map.data && this.mode === 'F6' && !this.g2) this._drawMap(ctx, P, k, C, col);
     if (this.g2) {
       // the three copies of F_1 in F_3
       ctx.strokeStyle = C.rule;
@@ -328,4 +364,11 @@ export class TauPad {
     ctx.beginPath(); ctx.arc(px, py, this.drag ? 6 : 5, 0, 2 * Math.PI); ctx.fill();
     ctx.restore();
   }
+}
+
+/** viridis, polynomial fit (as in the viewer's shader), t in [0, 1] -> [r, g, b] in 0..255 */
+function viridis(t) {
+  const c = [[0.2777, 0.0054, 0.3341], [0.1051, 1.4046, 1.3846], [-0.3309, 0.2148, 0.0951], [-4.6342, -5.7991, -19.3324],
+    [6.2283, 14.1799, 56.6906], [4.7764, -13.7451, -65.353], [-5.4355, 4.6459, 26.3124]];
+  return [0, 1, 2].map((e) => Math.round(255 * Math.min(1, Math.max(0, c.reduceRight((acc, ci) => acc * t + ci[e], 0)))));
 }

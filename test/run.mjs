@@ -485,6 +485,14 @@ console.log('generalized Sym formula f = Q(u1 F(lam1)) Q(u2 F(lam2))^{-1} (cw_ca
     check(`Clifford torus: projection = ${C.projection}, stereographic extent ${ext.toFixed(2)} bounded`, C.projection === 'sphere' && ext < 20 ? 0 : 1, 0.5);
     const B = computeGenSurface({ alphas: [[0.5, 0]], lams: [[0.5, 0], [0, 1]], signs: [1, 1], width: 4, height: 4, nx: 30, ny: 30, hmax: 0.01 });
     check(`branch point as a Sym point: projection = ${B.projection} (on no 3-sphere)`, B.projection === 'balanced' ? 0 : 1, 0.5);
+    // the dropped coordinate: x_4 for drop4; for the balanced projection, (pos, w4) is the stereographic image
+    // in R^4, whose norm is |X| / (1 - X.p) in S^4, so |pos|^2 + w^2 is not identically 0 and w varies
+    const D4 = computeGenSurface({ alphas: [[0.5, 0]], lams: [[0.5, 0], [0, 1]], signs: [1, 1], width: 4, height: 4, nx: 9, ny: 9, hmax: 0.01, projection: 'drop4' });
+    check('drop4: w4 is the fourth coordinate', Math.max(...Array.from({ length: 81 }, (_, v) => Math.abs(D4.w4[v] - D4.pos4[4 * v + 3]))), 1e-6);
+    let wmin = Infinity, wmax = -Infinity;
+    for (const x of B.w4) { wmin = Math.min(wmin, x); wmax = Math.max(wmax, x); }
+    check(`balanced: the dropped coordinate varies over the surface (${wmin.toFixed(3)} to ${wmax.toFixed(3)}), the Clifford torus on its 3-sphere has w = 0`,
+      (wmax - wmin > 1e-3 ? 0 : 1) + Math.max(...Array.from(C.w4).map(Math.abs)), 1e-9);
   }
 }
 
