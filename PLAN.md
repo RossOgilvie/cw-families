@@ -1,202 +1,211 @@
-# Implementation plan: walking the tree of constrained Willmore candidates
+# cw-families: plan and status
 
-Goal: an interactive page that walks the "tree" of `cw_candidates.md` through the space of sinh-Gordon spectral data at fixed conformal class τ.
-The edges are τ-preserving Whitham flows within one genus, and the branchings insert and open nodes where a marked resonance pair arrives at S^1.
-At each candidate the page draws the immersed torus, computed in \bbR^4 by the generalized Sym formula (F7 of `cw_candidates.md`) and projected to \bbR^3.
-The mathematics is in `cw_candidates.md` (sketch, findings F1–F10 and open questions) and, for the inherited CMC pipeline, in `cmc_spectral_to_immersion.md`.
+State at the end of 17 November 2026. The mathematics (Ross's sketch, findings F1–F15, open questions) is in `cw_candidates.md`; this file is about the code: what it does, how, and what comes next.
 
-The code base is a copy of cmc-immersion at commit 11eb1d9 (its plan is `PLAN.md` in the first commit of this repository).
-Architecture, conventions and tooling are inherited: plain ES modules, no build step, three.js vendored, computation in a worker, `node test/run.mjs` for tests.
+## 1. Goal
 
----
+1. Walk the "tree" of `cw_candidates.md` through sinh-Gordon spectral data at a fixed internal τ.
+   1. Edges: τ-preserving flows within one genus.
+   2. Branchings: a marked resonance pair arrives at S^1 as a σ-node, which is inserted and opened into the next genus.
+2. At each candidate, draw the torus.
+   1. It is computed in \bbR^4 by the generalized Sym formula (F7), and projected to \bbR^3.
+   2. Before the Sym points are ripe, the same formula gives an immersed plane (F13).
+3. Later: vary the internal τ (and possibly the external τ), to see how the candidates change and where they exist.
 
-## 1. What is reused
+## 2. Running and testing
 
-1. `src/cmc/cmc.js`: Killing fields, isospectral flows, grid integration of the frame.
-   The frame integration is generalized from (F, ∂_λF) at one λ_0 ∈ S^1 to F at two arbitrary λ_1, λ_2 ∈ \bbC^*.
-2. `src/cmc/periods.js`: periods of the differentials by quadrature; the basis of the evaluation of q along paths.
-3. `src/cmc/whitham.js`, `src/cmc/leaf.js`: the τ-flow (W varies, τ fixed) for genus ≥ 2.
-   In genus 2 the length of the integral period differential in the b(0) coordinates is a global parameter of the τ-flow; W is one only away from \calS.
-4. `src/cmc/genus2.js`: opening a node on S^1 to a ρ-pair of branch points.
-5. `src/viewer.js`, `src/worker.js`: the 3D viewer and the worker, with positions now coming from \bbR^4 through a projection.
-6. The λ-plane widget, for showing branch points, marked pairs and Sym points.
+1. The repository is a copy of cmc-immersion (at its commit 11eb1d9).
+   1. Plain ES modules, no build step, three.js vendored in `vendor/`.
+   2. The CMC derivation that `cmc.js` cites by section number is `cmc_spectral_to_immersion.md` in `~/programming/web/cmc-immersion/`.
+2. To serve: `python3 serve.py 8765`, then open http://127.0.0.1:8765/.
+   1. A link `#k=Re,Im,2` computes candidates 2 and 3 for that internal τ.
+   2. `#k=Re,Im` computes candidate 1 only.
+3. Tests: `node test/run.mjs`, 184 checks in about 10 s. They cover F7 (generalized Sym), q and resonance (F3, F6), the tree (candidates 1–3, the open end, double arrivals, unripe planes, `locateOnTree`), and the inherited CMC code.
+4. Headless checks of the page:
+   1. `chromium --virtual-time-budget` never finishes module workers that import other modules.
+   2. So use a real-time DevTools-protocol script instead. Node has `WebSocket` and `fetch`, so no packages are needed.
+   3. Drags need `Input.dispatchMouseEvent`, because synthetic pointer events cannot take pointer capture. `window.cmcWidget` exposes the λ-plane widget for this.
 
-The CMC-specific parts (Sym point slider, mean curvature, curvature-line grid, bubbletons, presets) stay available while the new mode is built, and are removed or hidden once they are no longer needed.
+## 3. Code map
 
-## 2. New ingredients
+1. `src/cmc/gensym.js`: the generalized Sym immersion, and projections.
+   1. `PairIntegrator`: F at two λ ∈ \bbC^*, with `stepCap` = 0.25/|X|. Near the open end |X| ≈ 0.71/t.
+   2. `leftEigenvector`, `computeGenSurface`.
+   3. Projections \bbR^4 → \bbR^3 (`projectPoints`):
+      1. automatic: stereographic if the surface lies on a round 3-sphere, otherwise Möbius-balanced;
+      2. Möbius-balanced: conformal barycenter in S^4, stereographic from the axis of least spread;
+      3. principal axes;
+      4. stereographic from e_4;
+      5. drop x_4.
+   4. `roundnessS4`: the distance from a round 2-sphere and the S^4 area after a Möbius normalization.
+2. `src/cmc/resonance.js`: the map q and resonance pairs.
+   1. `QMap`: q = (log μ_1, log μ_i) by graded Gauss–Legendre quadrature from α_1; `resonance()` is Newton with lattice reduction.
+   2. `genus0Resonance`: the closed forms of F3.
+   3. `classifyPair`: off, on or node, with a signed distance. A pair within 1e-8 of S^1 counts as on it.
+3. `src/cmc/tree.js`: the tree.
+   1. `internalFrame`: the internal τ as a point of F_6.
+   2. `genus1Edge`, `candidate1`, `genus2Anchor`, `genus2Edge`, `candidate2`.
+   3. `candidate`: the characters, the closing lattice, W and the external τ.
+   4. `refineArrival`: regula falsi.
+   5. `treeOf`: the drawable path of samples.
+   6. `paritySublattice`.
+   7. `locateOnTree`: the τ and t of a genus 2 curve.
+   8. `openEndShapes`.
+4. Spectral-curve modules:
+   1. `src/cmc/periods.js`: periods of the real-normalized differentials Θ_w.
+   2. `src/cmc/whitham.js`: `ellVector`, the genus 2 period vectors. `WhithamCurve` is only used by tests and the worker's unused `family` message.
+   3. `src/cmc/leaf.js`: `leafData`, `willmoreFrame` (W by the residue formula).
+   4. `src/cmc/genus2.js`: `openEndTau`.
+5. Inherited CMC modules:
+   1. `src/cmc/cmc.js`: Killing fields and `FrameIntegrator`.
+   2. `src/cmc/poly.js`.
+   3. `src/cmc/rootflow.js`: tests only.
+6. The page:
+   1. `src/app.js`: state, links, the candidate worker, `showSample`, `treeDrag`, `treeJump`.
+   2. `src/worker.js`: the messages `candidate1`, `candidate2` (with `fast`), `shapes`, and surfaces.
+   3. `src/tree-view.js`: the tree widget.
+   4. `src/spectral-widget.js`: the λ-plane.
+   5. `src/tau-pad.js`: the F_6 pad.
+   6. `src/viewer.js`: three.js, including `setMarkers` for the spikes.
+   7. `src/period-pad.js`: unused since its panel was removed.
 
-1. **Generalized Sym immersion** (F7).
-   Input: two points of the spectral curve (λ_j with a sheet), the eigenvectors u_j of ζ(0, λ_j), and the grid.
-   Output: f = Q(ψ_1) Q(ψ_2)^{-1} ∈ \bbR^4 per vertex, with ψ_j = u_j^T F(z, λ_j).
-   The derivative ∂_λF is no longer needed.
-   Normals in \bbR^3 are computed from the projected mesh, since the projection is not conformal in general.
-2. **Projections \bbR^4 → \bbR^3.**
-   First: drop the last coordinate.
-   Later: stereographic projection from a chosen point of S^4, orthogonal projection along a chosen direction, and a rotation of \bbR^4 driven from the UI.
-3. **The map q and resonance pairs.**
-   Evaluate q = (q^1, q^2) at points of the spectral curve along paths from a branch point, modulo Γ, with the quadrature of `periods.js`.
-   Solve q(P) − q(Q) = γ by Newton, starting from the genus 0 closed forms (F3) and continued along each edge.
-   Classify each marked pair as off S^1 (ρ-pair), on S^1 over two values of λ, or a σ-node (the event).
-4. **Genus 1 τ-flow.**
-   `whitham.js` requires g ≥ 2 because it works with the period plane in Gr(2, \bbR^g); in genus 1 one differential is exact instead.
-   A small separate module: one ρ-pair α, 1/conj(α), τ fixed, parametrized by W (to be checked to be global in genus 1).
-5. **Events and openings.**
-   Detect the arrival of a marked pair at S^1 along an edge (a sign change of a distance function, then bisection).
-   Insert the node there and open it (F5) into genus g + 1, then continue with the τ-flow of genus g + 1.
-6. **Candidates.**
-   At an event, choose the two trivial-multiplier ρ-pairs (F7, F8), find the closing lattice (original torus or the index 2 sublattice), and draw one fundamental domain.
-   Report W both from the residue formula and from the numerical integral ∫ |Δf|^2 / (4 |f_x|^2) dx dy.
-7. **The tree in the UI**, drawn as on the whiteboard.
-   The edges are curves in a plane whose vertical axis is the Willmore energy: W at a torus (a candidate), and the normalized Willmore energy elsewhere (the residue formula divided by the signed area of the parallelogram of B-periods of b_1, b_2, as in the Lemma "willmore" of the genus g paper).
-   The horizontal axis is a parameter along the edges, laid out so that branches separate (to be designed once the edges can be computed).
-   A dot moves along the tree by dragging and snaps to the bifurcation points and candidates; the 3D view and the λ-plane follow the dot.
+## 4. How the tree is computed (`candidate2(τ)`)
 
-## 3. Milestones
+1. **Internal frame.**
+   1. The classes 1 = [1], 2 = [τ], 3 = [1 + τ] are ordered by the lengths of their shortest vectors. The shortest is opened first.
+   2. The computation runs with the reduced τ1 of the rescaled lattice.
+   3. Convention: Λ^* = t i ⟨1, τ1⟩ and Γ = 2πi Λ^*. The factor i puts the σ-node of the pair for 1 at λ = −1.
+2. **Genus 0** (closed form).
+   1. The scale t runs from the vacuum to t = 1/π, where the pair for 1 is a σ-node at λ = −1 (F4).
+   2. On the closing lattice, W = 2/(t² Im τ1).
+3. **Genus 1 edge** (`genus1Edge`).
+   1. α = −r, starting at r = 1 and stepping down by 20%, with a linear predictor of the pairs in log r.
+   2. t(r) comes from a B-period.
+   3. The two remaining marked pairs are re-solved at each step.
+   4. An arrival (a passage through a σ-node, onto S^1 or off it) is refined by `refineArrival`, in 10–15 solves.
+   5. A double arrival, where the other pair is a σ-node at the same point (F14), is flagged.
+4. **Candidate 1** (`candidate`).
+   1. The monodromy characters at both Sym points are found by shooting along the lattice, at steps of stepCap/4.
+   2. The closing lattice is doubled when the characters differ (F8).
+   3. Then W by the residue formula, the external τ, and the closing and node defects (about 1e-6).
+5. **Genus 2 edge** (`genus2Edge`).
+   1. Anchor: the node is opened by ε = 1e-3, with the period ratio ell_2/ell_1 = conj(s τ1 + n) solved exactly.
+   2. Gauge: α_1 = t β e^{iψ}, α_2 = (t/β) e^{iψ}, where t = sqrt|α_1 α_2|.
+   3. Steps of 0.1 in log t; at each step, Newton in β for the ratio.
+   4. The remaining pair is lifted at the node (ν_2 = ν_1 sqrt(−conj λ_0)(λ − λ_0)) and continued.
+   5. It ends at the arrival (candidates 2 and 3) or at tMin = 1e-3 (the open end).
+6. **Candidates 2 and 3.**
+   1. At the arrival: the three choices of two from α_1, α_2 and the node. Candidate 2 is α_1 + α_2; candidate 3 is α_1 + the node.
+   2. At a double arrival: the three choices from α, node a and node b, on the genus 1 curve.
+   3. At an open end:
+      1. candidate 2 at t = 0.03, 0.01, 0.003, 0.001;
+      2. the frame is integrated only at 0.03, and the others reuse its parity;
+      3. the shape diagnostics only on request.
+7. **`treeOf`**: one path of samples.
+   1. It runs from t = 10/π in genus 0, through the opening and candidate 1, to the end of the genus 2 edge.
+   2. Each sample has views (Sym points, the cell of the eventual candidate, and ripe or not).
+8. **Timings** (Node, warm):
+   1. about 60–100 ms with an arrival;
+   2. about 0.2–0.3 s at an open end;
+   3. the drawn surface in the app's worker: about 0.3–1 s at resolution 240.
 
-Each milestone ends in a check that can be verified.
+## 5. The app
 
-1. **Generalized Sym immersion in the existing app.**
-   A mode in which the user picks two points λ_1, λ_2 in the λ-plane (with sheets), drawn by dropping the last coordinate of \bbR^4.
-   Tests in `test/run.mjs`, ported from the Python checks of F7: conformality for arbitrary λ, the homogeneous tori W = π^2 (t + 1/t), and agreement with the S^3 Sym formula for λ_j ∈ S^1.
-2. **q and resonance pairs.**
-   Tests: the genus 0 closed forms of F3 (two solutions per γ, the threshold |γ| = 4, the σ-node at the threshold), and q(B) ∈ ½Γ at branch points in genus 1 and 2 (F6).
-3. **Genus 0 edge and the first opening.**
-   The genus 0 scaling from the vacuum to the starting scale (F4), and the opening of the pair for 1 into genus 1.
-   Check: the class of the new branch points is [1], and the genus 1 curve right after opening is close to the nodal one.
-4. **Genus 1 τ-flow with event detection.**
-   Checks: τ stays fixed to quadrature accuracy, W is monotone along the edge, and the formulas of `genus_one.tex` hold in the overlapping normalization (to be matched; the notes normalize the Fermi lattice, not the period lattice).
-   Output: candidate 1, as an event on the edge.
-5. **Candidate 1 drawn.**
-   Generalized Sym points from the two trivial-multiplier pairs, the closing lattice, the torus in \bbR^4 and its projection.
-   Checks: closing by shooting (f(z + w) = f(z) for the lattice generators), and W from the residue formula against the numerical integral.
-6. **Second opening and candidate 2.**
-   The opening of genus 1 into genus 2 at candidate 1, the τ-flow in genus 2 (`leaf.js`), and candidate 2.
-   Check: the τ-flow passes through the nodal curve continuously (the paper shows the leaf passes through U^g).
-7. **Tree view and projections.**
-   The tree drawn with the Willmore energy on the vertical axis and a snapping dot (§2.7), more projections, and per-candidate views.
-8. **Third candidate** (the doubling construction, F8), and tracking of pairs along S^1 (the "(or not)" branches), for further experiments.
+1. **Candidates section.**
+   1. Internal τ: fields and the F_6 pad. Dragging recomputes, and the latest request wins.
+   2. Buttons: Find candidates 2, 3, and Find candidate 1.
+   3. The view picker: the Sym-point pairs at the current sample.
+   4. The tree view.
+   5. The sample note, with the factors c_k: f(z + e_k) = c_k f(z) on the cell.
+   6. The candidate note, and the Check the limit shape button at open ends.
+2. **Tree view.**
+   1. W on the closing lattice, in units of π², against the path. The opening is on the left axis, genus 1 takes the first third of the width and genus 2 the rest.
+   2. The nodes: opening, candidate 1, candidates 2 and 3 (or "candidates 1, 2, 3" at a double arrival), open end.
+   3. Interaction: the dot is dragged and snaps to the nodes, or stepped with the arrow keys; shift steps by 10. Double-click shows W from 0.
+3. **The dot drives the drawing.**
+   1. The 3D view shows the sample.
+   2. The λ-plane shows the path along the current edge.
+   3. Near an open end, spikes mark the four half-periods (the branch points of the limit, F12).
+4. **λ-plane.**
+   1. The Sym points are not draggable.
+      1. A branch point that is a Sym point is drawn blue.
+      2. Any other Sym point is a blue square λ_j: on S^1 a σ-node, elsewhere a pair not yet on S^1.
+   2. Dragging a branch point moves along the tree.
+      1. In genus 2, `locateOnTree` gives the curve's τ and t. The tree is recomputed live, and candidate 2 of the dragged curve is drawn.
+      2. In genus 1, τ is not determined by the curve, so the drag moves along the edge.
+5. **Changes between nearby τ** (`treeJump`), shown at the top of the note:
+   1. a wall of F_6 crossed (the class order changes, and the candidates continue);
+   2. a change of the kind of tree;
+   3. a jump of W at a node.
+6. **Appearance and presets.**
+   1. The projection \bbR^4 → \bbR^3 is in Appearance.
+   2. Presets:
+      1. the Clifford torus;
+      2. candidates at 0.45 + 0.95i;
+      3. a double arrival at 0.5 + 0.9i;
+      4. an open end at 0.2 + 1.3i.
+   3. Without a link, the page starts at 0.45 + 0.95i.
 
-## Status
+## 6. Done (condensed log; details in the commit messages)
 
-1. Milestone 1 done (November 2026), apart from the README.
-   `src/cmc/gensym.js` has the pair integrator (F at two λ ∈ \bbC^*, with the layout and marching of `FrameIntegrator`), the eigenvectors of ζ(0, λ) on a chosen sheet, the quaternion formula and `computeGenSurface`.
-   `test/run.mjs` checks conformality for arbitrary λ (to 1e-15), agreement with the S^3 Sym formula, closing and W = π^2 (t + 1/t) for three homogeneous tori (to 4e-6, the error of the finite differences), and the grid against direct integration.
-   In the app, the checkbox *Two Sym points* in Spectral data switches the surface to the generalized formula.
-   λ_1, λ_2 are blue squares in the λ-plane: draggable anywhere, snapping onto the branch points and their reflections (and following a branch point they sit on), with a double-click flipping the sheet.
-   Projections: automatic (the default: stereographic projection of the 3-sphere when the surface lies on one, from its point farthest from the surface, and otherwise Möbius-balanced), Möbius-balanced (f read in S^4 and moved to its conformal barycenter, then stereographic projection from the principal axis of least spread, keeping the three axes of most spread; a round 2-sphere becomes the unit sphere), principal axes of f in R^4, stereographic from e_4, and dropping x_4.
-   The state is in the link (`y`, `j`), and there are three presets (the Clifford torus, a homogeneous torus of ratio 2, and a branch point as one Sym point).
-   The panels Mean curvature and Root-preserving flow are removed (with `src/sym-pad.js`); `src/cmc/rootflow.js` stays, as its tests still run.
+1. Generalized Sym immersion and projections (F7, F9, F11).
+2. q and resonance pairs (F3, F6).
+3. The tree to candidate 1, and the internal τ in F_6.
+4. Genus 2:
+   1. The genus 2 edge and candidates 2 and 3.
+   2. The edge parametrized by t and followed to the open end. The open-end τ of the rescaled roots tends to the internal τ with error exactly O(t).
+5. The open-end limit: a branched double cover of the round sphere (F12), with spikes at the branch points.
+6. Unripe immersions along the whole path: planes with homotheties (F13), and the tree view.
+7. Double arrivals on the walls of F_6 (F14). Arrivals now include passages from on S^1 to off it.
+8. Interface:
+   1. The CMC panels and presets were removed.
+   2. The generalized formula is always on.
+   3. Fixed Sym-point symbols, and dragging along the tree.
+9. Speed: candidate frames at stepCap/4, regula falsi for the arrivals, 20% steps in genus 1, and the open-end diagnostics on request.
+   1. A tree with an arrival: 344 → about 60 ms.
+   2. An open end: 2–5 s → about 0.25 s.
+10. Tried and dropped: continuing the tree in τ (starting guesses from the previous tree).
+    1. The cost is the two full q integrals per solve, not the Newton iterations.
+    2. Measured gain 8–15%.
 
-2. Milestone 2, first part done (November 2026): `src/cmc/resonance.js`.
-   q = (q^1, q^2) = (log μ_1, log μ_i) is the primitive of the real-normalized Θ_1, Θ_i of `periods.js`, based at the branch point α_1 (q∘σ = −q), in closed form in genus 0 (q_w = (w ν/λ + conj(w) ν)/κ_0, in the code's normalization ν^2 = −λ, κ_0 = 2).
-   It is computed by Gauss–Legendre quadrature on segments, with ν continued and the square-root singularities at branch-point ends removed.
-   Resonance pairs: Newton in (λ_P, λ_Q) with q carried along incrementally; `genus0Resonance` (closed form: ν_P − ν_Q = 2πi k, ν_P ν_Q = k/conj(k), over S^1 if and only if |k| ≤ 1/π); `classifyPair` (off, on, node, with a signed distance to arrival).
-   In this normalization the torus lattice Λ is in the z-plane and γ = 2πi (k_1, k_2) with k ∈ Λ^*; the sketch's Γ is 2πi Λ^*, so its scale is that of Λ.
-   Tests: in genus 0, q equals the eigenvalues of X(λ) on the eigenline used by `gensym.js` (both sheets), the closed forms, Newton, the threshold and classification; in genus 1 and 2, Re q = 0 and q(α) = q(1/conj α) at branch points, and 2q(α_2) is a period of B_1 ± B_2.
-   Continuing marked pairs along a deformation of the curve is done with the genus 1 edge (item 3), using the lattice reduction of `resonance()`.
-3. Milestones 3–5 for candidate 1 done (November 2026): `src/cmc/tree.js`.
-   Design: the internal τ is an input of every function (and the solvers take warm starts), so that the tree can later be recomputed along a path of τ; the external τ of a candidate is derived and reported.
-   Conventions: Λ^* = t i ⟨1, τ⟩; the factor i puts the σ-node of the pair for 1 at λ = −1, where the opened genus 1 curves α = −r continue ν^2 = −λ without rotating the z-plane (at a double root λ_0 the nodal curve normalizes to ν^2 = conj(λ_0) λ).
-   Genus 0 edge in closed form (W = area of Λ = 1/(t^2 Im τ), arrivals at π|k| = 1, the σ-node at λ = π^2 k^2).
-   Genus 1 edge: t(r) from the B-period, the τ and third pairs continued from their genus 0 positions (ν_1 = ν_0 (λ + 1) at the node), arrivals refined by bisection.
-   Candidates: monodromy characters at both Sym points by shooting, the closing lattice (doubled when they differ), W by the residue formula on it, the external τ, and a closing check.
-   In the app: the *Candidates* section (internal τ, *Find candidate 1*), computed in a worker, loads the curve, the two Sym points and one cell of the closing lattice; a link `#k=Re,Im` recomputes it.
-   Result for internal τ = 0.2 + 1.3i: the τ pair arrives at α = −0.092161; the node has monodromy ±I; the characters differ, so the torus closes on the doubled lattice (to 2e-10); W = 23.5632 = 2.3874 π^2; external τ = −0.3133 + 1.1159i.
-   A finite-difference W of the drawn torus converges towards the residue value (24.84, 24.05, 23.82, 23.67 at 48, 72, 96, 144 points per side).
-   Open: the genus 1 continuation fails below r ≈ 0.05 (the α → 0 corner); after an arrival the coarse steps can jump to another branch (harmless for candidate 1, which stops at the first arrival).
+## 7. Next steps
 
-4. Candidate 2 and the F_6 pad (November 2026).
-   The internal τ is a point of F_6 (`internalFrame`): the classes 1 = [1], 2 = [τ], 3 = [1 + τ] keep their labels, the shortest class is opened first, and the computation runs with the reduced τ' of the rescaled lattice.
-   The Candidates section has an F_6 pad: dragging recomputes the last requested candidate (latest request wins).
-   Genus 2 edge (`genus2Edge`): the node of candidate 1 opened by ε = 1e-3 with the period ratio solved exactly (`genus2Anchor`: ell_2/ell_1 = conj(s τ' + n), the B-period through the node being the arriving vector modulo k_1), then `WhithamCurve` in the direction where α_2 leaves S^1, the remaining pair lifted by ν_2 = ν_1 sqrt(−conj λ_0)(λ − λ_0) and continued with the lattice of the current B-periods.
-   At its arrival there are three trivial-multiplier ρ-pairs (α_1, α_2, the node); every choice of two closes on a doubled lattice, with the same W and different external τ.
-   The paths of the branch points along the genus 1 or genus 2 edge are drawn in the λ-plane, coloured by W.
-   Results: at 0.45 + 0.95i candidate 1 has W = 2.3131 π^2 and candidate 2 W = 2.4725 π^2, with external τ −0.0871 + 1.5768i (α_1 + α_2), 0.1855 + 1.7195i (α_1 + node), −0.1 + 1.9i (α_2 + node).
-   At 0.2 + 1.3i there is no candidate 2 on the genus 2 edge: every tracked pair (vectors m + nτ, |m| ≤ 2, n ≤ 2) moves away from S^1 until the edge reaches the α → 0 corner.
-   Open: the arrivals in genus 2 lie close to the α → 0 corner (|α| ~ 0.05–0.3), where WhithamCurve stops (newton); at 0.4 + i Node finds the arrival at s = 0.935 and the browser does not (the curve ends first), so the corner needs better numerics (the rescaled coordinate λ/t of the genus 2 paper). The genus 2 anchor Newton diverges for some τ (0.4 + 0.97i, near i), and for τ' on the imaginary axis (0 + 1.15i, 1.6i) the remaining pair is not continued into genus 2. The third pair at candidate 1 can already be on S^1 (0.5 + 0.9i), where an arrival from off S^1 is not the right event.
+1. **The "(or not)" branches.**
+   1. Continue the genus 1 edge past candidate 1 without opening, to the arrival of the third pair.
+   2. Decide how branches spread horizontally in the tree view.
+2. **Curves in F_6** (next direction 5). Draw on the τ pad where candidates 2 and 3 exist and where the edge ends at an open end.
+   1. The transition is continuous: the arrival goes to t = 0 (F15).
+   2. It can be computed directly as the curve where the arrival is at t = 0, or from the real locus of the genus 2 paper, and checked against a sparse grid.
+   3. Also mark the walls of F_6 where double arrivals happen.
+3. **Layout** (next direction 6): one quarter for the controls, and three quarters for candidates 1, 2 and 3. These are one canvas with three viewports.
+4. **4D visualization** (next direction 3), for example:
+   1. colour by the coordinate dropped by the balanced projection;
+   2. a "4D rotation" drag that moves the projection pole on S^4.
+5. **Smoother dragging:**
+   1. a lower resolution while dragging;
+   2. cheaper q integrals (fewer nodes on the graded mesh); these are now the main cost of an edge.
+6. **Questions for the mathematics** (see `cw_candidates.md`):
+   1. The ℝ^3 hypothesis: the choice "node a + node b" at a double arrival is a CMC torus in S^3 (F14).
+   2. A sweep of W over F_6.
+   3. The external τ.
+7. **Housekeeping:**
+   1. Rewrite the README, the page title and subtitle ("CMC surfaces"), and `about.html`; they still describe cmc-immersion.
+   2. Remove `src/period-pad.js` and the worker's `family` message, both unused.
+   3. Decide about the deleted `cmc_spectral_to_immersion.md`: it is deleted in the working tree but not committed, and `cmc.js` cites it.
 
-5. The open ends (November 2026).
-   When the genus 2 edge reaches the open end (both branch points to 0; genus 2 paper, section "The Open Ends") before an arrival, `openEndInfo` rescales by t = sqrt|α_1 α_2|: the open-end τ of the rescaled root (genus2.js) tends to the internal τ with error O(t), and W_int to 4π (8π on the doubled lattice).
-   `candidate2` then returns candidate 2 at the last point of the edge; the app says that candidates 2 and 3 become a branched double cover of the sphere there (Ross), and draws it.
-   Observed at 0.2 + 1.3i (t = 0.038): the drawn torus is two nearly round spheres joined by a small neck, W = 0.988 · 8π, and its fourth principal variance in R^4 tends to 0 (0.15, 0.04, 0.03 along the end of the edge). Whether this is the branched double cover after a normalization (a Möbius transformation, or a rescaling about the neck) is not yet checked.
-6. The genus 2 edge parametrized by t (November 2026), replacing WhithamCurve there.
-   In the gauge of WhithamCurve (arg(α_1 α_2) fixed), α_1 = t β e^{iψ}, α_2 = (t/β) e^{iψ}, and the edge is ratio(t, β) = the internal ratio, solved by Newton in β and continued in log t; t decreases monotonically along the edge and β stays of size 1, the rescaled root of the open end (check-α = β).
-   Numerics made this work to t = 1e-5 in under 0.1 s: a graded quadrature mesh in `QMap.segment`; the B-cycle differentials of periods.js near the open ends (the route through all cycles divides by a_0 ~ t^2) but not near a node on S^1 (where the B-cycle route has a nonzero real A-period); one damping factor in the resonance Newton respecting each point's own distance to the singular points (P runs out like 1/t while Q stays at scale t); the period vectors' signs aligned throughout.
-   Results: the open-end τ of β agrees with the internal τ to 8.3e-3, 8.3e-4, 8.3e-5, 8.3e-6 at t = 1e-2 ... 1e-5 (exactly O(t)), and W_int/4π − 1 = −3e-6 at 1e-5: the edges end at the open end of the genus 2 paper, with its τ. All seven test values of τ now end either at an arrival (0.45 + 0.95i, 0.4 + i, 0.3 + 0.8i) or at the open end (0.2 + 1.3i, 1.6i, 0.75 + 0.82i, 2i; 0.5 + 0.9i was listed here wrongly, see item 9); before, 1.6i and 0.3 + 0.8i failed and the arrival at 0.4 + i was lost in the browser.
-   Near the open end the drawn surface was taken at t = 0.03 (superseded by item 7).
-   Open: an arrival of a pair that is already on S^1 at the start of the edge (0.5 + 0.9i) is not detected (only arrivals from off S^1). Resolved in item 9.
-7. The limit surface at the open end (November 2026).
-   The "stiffness" was the step size: the generator has |X(λ_j)| ≈ 0.71/t at the Sym points, and the torus lattice shrinks like t^{1/2}. Steps are now capped at 0.25/|X| (`PairIntegrator.stepCap`, in `candidate` and `computeGenSurface`), and candidate 2 is computed at t = 0.03, 0.01, 0.003, 0.001 (closing defects ≤ 4e-6). The picker chooses the scale; the default is 0.01.
-   The shape is read Möbius-invariantly (`roundnessS4`): f in S^4, moved to its conformal barycenter (uniform weights on the torus), and fitted by a round 2-sphere (two linear relations among (X, 1)).
-   At 0.2 + 1.3i, 1.6i and 2i: the distance from a round sphere is 0.34, 0.20, 0.11, 0.064 at t = 0.03 ... 0.001 (∝ t^{1/2}), and the S^4 area tends to 2 × 4π (always below W/4π), while no part of the torus carries a growing share of the area. So the limit is a round sphere covered twice, not two spheres; the two spheres with a neck of item 5 were the R^4 view of a surface still far from the limit.
-   The branch points (minima of the conformal factor, which tend to 0 like t) are exactly the four half-periods of the doubled lattice, and f(−z) − f(z) → 0 like t^{1/2} (0.2 + 1.3i). So the limit is the quotient T^2 → T^2/±1 ≅ S^2 of the external torus (℘ of the external lattice up to a Möbius transformation); W = 8π.
-   The external τ is constant along the edge (−0.3133 + 1.1159i at 0.2 + 1.3i).
-   The Möbius-balanced projection is now the automatic one for surfaces on no 3-sphere. It also changes the look of ordinary candidates: candidate 2 at 0.45 + 0.95i appears as a torus without the two-coloured halves. The candidates are still on no 3-sphere in the balanced frame (largest distance from the best hyperplane 0.22–0.52 on the unit S^4, against 4e-8 for the Clifford torus), so F11 stands.
-8. Unripe data and the tree view (November 2026; next directions 1 and 2).
-   `treeOf` (tree.js) turns a candidate computation into one path of samples, from near the vacuum (t = 10/π, W = 0.02π²) through the opening, candidate 1, and the genus 2 edge to candidates 2 and 3 or the open end, with the immersion drawable at every sample.
-   Sym points along the path: genus 0, the pair for 1 and the arriving pair a; genus 1, the branch point α and a; genus 2, three views (α_1 + α_2, which is candidate 2 and ripe along the whole edge; α_1 + the remaining pair b, towards candidate 3; α_2 + b).
-   The cell drawn is the one on which the eventual candidate closes: by F8 it depends only on the classes of the two Sym points (`paritySublattice`), and this reproduces the lattices that candidates 1, 2, 3 and the other choice find from their characters.
-   Before ripeness the immersion is a plane with f(z + w) = μ_1(w) f(z) μ_2(w)^{-1} (u_j is an eigenvector of the monodromy). The multipliers turn out to be real, so the lattice acts by homotheties of R^4 about 0, f(z + w) = c(w) f(z) with c real, and ripeness is c = 1 (checked to 1e-8 on all three edges, F13).
-   W increases monotonically along the whole path (all test values of τ).
-   The tree view (`src/tree-view.js`, milestone 7, first version) plots W on the closing lattice against the path: the opening on the left axis, genus 1 on the first third of the width and genus 2 on the other two thirds (genus 0 is not shown; 17 November 2026). The nodes are the opening, candidate 1, and candidates 2 and 3 or the open end. A dot is dragged along the path (snapping to the nodes) or stepped with the arrow keys, and the 3D view, the λ-plane and a note (with c_1, c_2) follow it. The y-axis shows the band of the genus 1 and 2 edges, and double-click shows it from 0. The view picker chooses among the Sym-point pairs on the genus 2 edge.
-   Not yet in the tree: the genus 1 edge continued past candidate 1 without opening (to the arrival of the third pair).
-9. Double arrivals (November 2026).
-   On the walls of F_6 where the two classes after the opened one are equally long (Re τ = 1/2 in the chamber 123, and its images), both pairs arrive at S^1 together on the genus 1 edge. Then the genus 2 edge has length 0: approaching the wall, the arrival on the genus 2 edge moves to its start (t_arrival / t_start = 0.40, 0.64, 0.76, 0.83, 0.93 at Re τ = 0.45, 0.48, 0.49, 0.495, 0.499 with Im τ = 0.9), and W of candidates 2 and 3 tends to W of candidate 1.
-   Before, the code opened one node, missed the other (it started just on S^1 and left it through its σ-node, which was not flagged), and followed the edge on to the open end; so 0.5 + 0.9i was wrongly reported as an open end.
-   Now the genus 1 edge flags a double arrival (the other pair is a σ-node at the same point), and `candidate2` returns the three choices of two of {α, node a, node b} on the genus 1 curve: candidate 2 (α_2 → node a) is candidate 1, candidate 3 is α + node b, the other choice node a + node b. All three candidates have the same spectral curve and W and differ only in the Sym points (Ross).
-   At 0.5 + 0.9i: W = 2.3505π² for all three; the external τ of candidate 3 is the mirror image of that of candidate 1 (∓0.0566 + 1.6981i), and the other choice is rectangular (1.8i = 2 Im τ · i). Just off the wall (0.499 + 0.9i) the three candidates agree with these to 2e-3. The same at −0.5 + 1.2i and 0.5 + 1.4i.
-   Both edges now also treat a passage of a pair from on S^1 to off S^1 (through a σ-node) as an arrival.
-   The third choice there (node a + node b) lies on a 3-sphere: a CMC torus in S^3 with rectangular external τ (F14).
-10. Branch points near the open end (November 2026).
-   Along a genus 2 edge that ends at an open end, the drawing of candidate 2 has spikes (`Viewer.setMarkers`) at the four half-periods of the cell, along the outward direction from the centroid: they are the minima of the conformal factor all along the edge (checked at t = 0.3, 0.1, 0.03, 0.003) and the branch points of the limit, so t = 0.1 or 0.01 already shows the branched double cover (Ross).
-11. Interface cleanup (17 November 2026).
-   The panels Plane of differentials, Whitham deformation and Isospectral deformation are removed from the page, with their code in app.js (the 𝒲 slider and family, the τ pad of the leaf, the period pad and locks, the domain and isospectral sliders). The modules `whitham.js`, `leaf.js` and `period-pad.js` stay: the tree and the tests use the first two.
-   Without a link, the page starts with candidate 2 for internal τ = 0.45 + 0.95i.
-12. Presets, the λ-plane, and dragging along the tree (17 November 2026).
-   Presets: the CMC ones are removed; now the Clifford torus, and candidates by internal τ: 0.45 + 0.95i (candidates 2 and 3), 0.5 + 0.9i (double arrival on Re τ = ½), 0.2 + 1.3i (open end).
-   The generalized Sym formula is always on (no checkbox, no λ₀). The Sym points are not draggable: a branch point that is a Sym point is drawn blue (its α label suffices), any other Sym point is a blue square λ_j (on S^1 a σ-node, elsewhere a point of a pair not yet on S^1). The projection ℝ⁴ → ℝ³ is in Appearance.
-   Dragging a branch point moves along the tree. In genus 2 the curve determines its internal τ and scale t: `locateOnTree` inverts the period ratio ell_2/ell_1 = conj(s τ1 + n) and `internalFrame`, by continuity from the τ at the start of the drag (every genus 2 sample gives back its τ and t to 1e-12; a perturbed curve lies on the edge of its τ). While dragging, candidate 2 of the dragged curve is drawn (its branch points are ripe on the whole edge; the cell has the parity of the tree's candidate 2) and the tree is recomputed for the new τ (without the open-end diagnostics); on release the dot goes to the genus 2 sample at scale t and that sample is drawn. In genus 1 the internal τ is not determined by the curve (it enters only through the resonance lattice), so dragging moves the dot along the genus 1 edge to |α|.
-13. Speed (17 November 2026).
-   Profile of `candidate2`: about 80% of the time was frame integration (`march`), the rest the two edges (resonance Newton on q integrals, periods).
-   `candidate` now steps at a quarter of `PairIntegrator.stepCap` instead of h = 0.002: about ten times faster (3–5 ms instead of about 40 ms per candidate), with the characters and W unchanged and closing defects about 1e-6 instead of 1e-9 (test tolerances 3e-5).
-   Arrivals are refined by regula falsi (Illinois) on ∓dist² (`refineArrival`) instead of bisection: 10–15 solves instead of 50. The bisection had run on to a 1e-13 bracket, although `classifyPair` counts a pair within 1e-8 of S^1 as on it, so the off-side distance stalls near 1.7e-8; the refinement now stops at 1e-7. The arrivals agree with the bisection's to 2e-9 in r and t and 2e-8 in W at nine test values of τ, including the double arrival and three open ends.
-   `candidate2` (warm, Node): 54 ms at 0.45 + 0.95i (was 344), 102 ms at 0.3 + 0.8i (was 382); open ends 127–257 ms in fast mode, and still about 3.3 s with the shape diagnostics (next: compute those on demand).
-14. Speed, continued, and changes under τ (17 November 2026).
-   Genus 1 edge: steps of 20% in r (factor 0.8, was 3%), with the pairs predicted by linear extrapolation in log r and the q map and scale shared by the two pairs at each r. The arrivals agree with the 3% steps to 3e-10 at six test values of τ, including the double arrival; the edge takes 30–60 ms (130–150 ms at 2i, where r* = 0.008).
-   Continuation in τ (starting guesses from the previous tree at the same r) was tried and dropped: the Newton iterations did not drop (4.6 against 4.7; the tolerance is 1e-12) and the edge was only 8–15% faster, since each solve is dominated by the two full q integrals. The genus 2 edge keeps steps of 0.1 in log t (0.2 was faster at arrivals but slower at open ends).
-   Near the open end, candidate 2 is integrated only at the largest drawing scale; the smaller scales reuse its parity (the characters are constant along the edge), with W by the residue formula and no closing defects. The shape diagnostics are computed only on request (`openEndShapes`, the button Check the limit shape). Open-end trees: about 0.2–0.3 s (was 2–5 s).
-   The app compares each result with the previous one for a nearby τ (|Δτ| < 0.05): a wall of F_6 crossed (the class order changes; the candidates continue, e.g. across Re τ = 1/2 by the mirror symmetry), a change of the kind of tree, and jumps of W at a node (more than 0.5% + 3|Δτ|/Im τ). Candidates 2 and 3 merge continuously into the open end: along Im τ = 0.95 the arrival goes to t = 0 as Re τ decreases to about 0.33 (t* = 0.27, 0.14, 0.05, 0.014 at Re τ = 0.45, 0.40, 0.36, 0.34), with W → 8π. No jumps were seen in the sweeps so far.
+## 8. Decisions taken
 
-## TODO
+1. The surface is computed in \bbR^4, because generically the target is S^4 (F9, F11).
+2. The internal τ (of Γ) is fixed and given as a point of F_6. The external τ (of the torus) is derived and reported.
+3. Take the double cover whenever necessary; it is always necessary when the two Sym points are different marked pairs (F8).
+4. Openings place the branch points near the node, as a ρ-pair inside the disc (F5).
+5. Genus 1 has its own edge code; genus 2 uses the t-parametrization, not `WhithamCurve`.
+6. Only the generalized Sym formula is used.
+   1. The Sym points follow from the tree and are not editable.
+   2. An unripe Sym point uses the point P of its pair, not Q = ρσP (F13).
 
-1. Rewrite the README for cw-families: it still describes cmc-immersion (title, controls, layout, the removed panels).
-2. The label of a λ_j overlaps the label of the branch point it sits on. (Resolved 17 November 2026: a branch point that is a Sym point is drawn blue with its own label only.)
-3. The page title and subtitle ("CMC surfaces") and `about.html` still describe cmc-immersion.
-4. Editing the spectral data leaves the candidate. (The domain sliders were removed with the Plane of differentials, 17 November 2026.)
-5. Headless checks: `chromium --virtual-time-budget` does not finish loading module workers that import other modules, so screenshots of worker results need a real-time wait (a small DevTools-protocol script).
+## 9. Open questions (implementation)
 
-Next directions (Ross, 16 November 2026):
-
-1. Unripe data: the immersion formula before the resonance pair reaches S^1. Expected: an immersed plane, equivariant under the lattice (see below), as for Sym–Bobenko without closing conditions.
-2. The immersion all along the tree, from the vacuum to the candidate.
-3. Better visualizations of 4D.
-4. Only the generalized Sym formula is wanted: clean up the λ-plane interface accordingly. (Done, status item 12.)
-5. Precompute curves in F_6 showing where candidates exist and where the edges end at open ends.
-6. A new layout: the screen in four quarters, one with the controls and three with the candidates.
-7. Store the whole tree, for smoother and faster updates under changes of τ (reuse the existing tree, e.g. at open ends), and to see whether candidates jump as τ changes.
-
-## 4. Decisions taken
-
-1. The surface is computed in \bbR^4 (generically the target is S^4, F9); the first projection drops the last coordinate.
-2. Openings place the branch points near the node, as a ρ-pair inside the disc (F5).
-3. Genus 1 gets its own τ-flow module instead of extending `whitham.js`.
-4. Tracking resonance pairs along S^1 after arrival is a later feature; it is not needed for the candidates.
-
-## 5. Open questions
-
-1. Which conformal class is fixed: that of Γ, or that of the doubled torus (open question 2 of `cw_candidates.md`)?
-   Class matching itself is settled: take the double cover whenever necessary.
-2. Normalization of q: the constant fixing the trivial-multiplier class (the spin structure) and the identification of q with the differentials p_w of `periods.js` and of Γ with the code's period lattice.
-   This is an implementation matter to settle in milestone 2, against F3.
-3. A global parameter for the genus 1 τ-flow (W, or the analogue of the genus 2 integral period length).
-4. The layout of the tree view: the horizontal axis, and how the branches at a bifurcation are spread out.
+1. The genus 1 edge has no global parameter other than r (or W, which is monotone along every path tried so far).
+2. The tree view's horizontal axis is a path parameter: genus 1 by log r, genus 2 by log t. A more meaningful axis would help once branches are drawn.
+3. Pairs tracked along S^1 after an arrival (the "on" pairs) are followed only to detect their passage through a σ-node.

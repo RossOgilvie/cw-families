@@ -23,9 +23,9 @@ There's a third candidate, but we can implement that later.
 
 In general, the "tree" consists edges of τ-preserving flow within spectral curves on a given genus, and branching by inserting and opening nodes when resonance points reach \bbS^1 (or not). 
 
-## Findings so far (November 2026)
+## Findings so far (November 2026; last updated 17 November)
 
-Each item says how it was checked.
+Each item says how it was checked. The code and its status are in `PLAN.md` (in the code repository, `~/programming/web/cw-families`).
 Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in the papers folder (`2026-post-qft`), Bohle 2010 (Constrained Willmore tori in the 4-sphere), and Bohle–Leschke–Pedit–Pinkall 2012 (BLPP, Conformal maps from a 2-torus to the 4-sphere).
 
 1. F1: Sinh-Gordon curves are constrained Willmore spectral curves.
@@ -83,7 +83,7 @@ Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in
    With a branch point as one generalized Sym point, f lies in no round 3-sphere (local patch, fit residual 7e-2, against 1e-11 for two σ-nodes).
    This is consistent with Bohle 2010, Corollary 6.12: a Case II torus in a 3-sphere is CMC, which needs σ-nodes.
    So we compute in \bbR^4 and project to \bbR^3.
-   The known rectangular cases presumably lie in \bbR^3 (unchecked).
+   The known rectangular cases presumably lie in \bbR^3 (unchecked); F14 gives one candidate that lies on a 3-sphere.
 10. F10: Parameter count.
    A σ-node arriving over S^1 is a codimension 1 event on an edge (one parameter on S^1 against q ∈ ½Γ in i\bbR^2).
    The branch pair from the opened node is a trivial-multiplier ρ-pair along the whole edge, provided its class matches.
@@ -110,24 +110,27 @@ Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in
    They have the same W, and the candidates just off the wall tend to them. At 0.5 + 0.9i the external τ of candidate 3 is the mirror image of that of candidate 1, and the third choice is rectangular (external τ = 2 Im τ · i).
    Checked: numerically at 0.5 + 0.9i, −0.5 + 1.2i, 0.5 + 1.4i, and by continuity from 0.499 + 0.9i.
    The third choice has two σ-nodes as Sym points, so it lies on a round 3-sphere (F11): it is a CMC torus in S^3, with a rectangular external τ, and so a torus in R^3 after stereographic projection (the app's automatic projection recognizes the 3-sphere). This bears on open questions 4 and 5.
+15. F15: How the tree changes with the internal τ.
+   1. W increases monotonically along the whole path from the vacuum to the last candidate, at every internal τ tried.
+   2. Candidates 2 and 3 merge continuously into the open end. Along Im τ = 0.95 the arrival on the genus 2 edge goes to t = 0 as Re τ decreases to about 0.33 (t = 0.27, 0.14, 0.05, 0.014 at Re τ = 0.45, 0.40, 0.36, 0.34), and W of candidates 2 and 3 tends to 8π.
+   3. Across a wall of F_6 the order of the classes changes but the candidates continue: across Re τ = 1/2 candidate 1 is unchanged and the roles of classes 2 and 3 are exchanged (mirror symmetry); on the wall itself there is a double arrival (F14).
+   4. No discontinuity of W has been seen in the sweeps so far (the app reports one when it happens between nearby τ).
+   Checked: numerically along a few lines in F_6; the boundary curve of the candidates has not been traced.
 
 ## Open questions
 
-1. Class matching at candidates 1 and 2.
-   The branch pair from opening 1 has class [1], while the pairs of τ and of the third vector have other classes.
-   By F8, a candidate built from 1 and τ closes only on a double cover.
-   Are candidates 1 and 2 meant to be on the double cover too, or is the second Sym pair at those candidates of class [1]?
-   Answer (Ross): take the double cover whenever necessary.
-   Since the three marked pairs have three different classes, this is always the case when the two Sym pairs are different marked pairs.
-2. Which conformal class is fixed?
-   The torus lattice of the candidate is the index 2 sublattice of F8, whose conformal class generally differs from τ (for a square lattice, one index 2 sublattice is again square and the other two are rectangles with ratio 2).
-   Is τ in this sketch the class of Γ, or the class of the final (doubled) torus?
-   Answer (Ross): these are the internal τ (of Γ) and the external τ (of the torus).
-   There is no good way yet to fix the external τ ab initio; we fix the internal τ, and revisit this once we know better how the candidates behave.
-3. Candidates 2 and 3, and the open ends.
-   Answer (Ross): candidates 2 and 3 have the same (genus 2) spectral curve; candidate 2 takes the two pairs of branch points as Sym points, candidate 3 the pair of branch points from genus 1 and the resonance pair arriving on S^1.
-   It is expected that for some internal τ the edge reaches an open end (a branch point comes to α = 0) before the next arrival; the limit can be taken (genus 2 paper), and there the corresponding "immersion" is a branched cover of the sphere.
-4. The R^3 hypothesis (F11).
-   The candidates with a branch point as a Sym point lie in S^4, not in a 3-sphere, so they are not tori in R^3.
+Settled (answers from Ross):
+
+1. Class matching: take the double cover whenever necessary. Since the three marked pairs have three different classes, this is always the case when the two Sym pairs are different marked pairs (F8).
+2. Which conformal class is fixed: the internal τ (of Γ) is fixed; the external τ (of the torus, on the index 2 sublattice of F8) is derived and generally differs. There is no good way yet to fix the external τ ab initio; to be revisited once the candidates are understood better.
+3. Candidates 2 and 3: they have the same (genus 2) spectral curve; candidate 2 takes the two pairs of branch points as Sym points, candidate 3 the pair of branch points from genus 1 and the resonance pair arriving on S^1. All candidates on one curve differ only in which resonances are the Sym points (also at a double arrival, F14). Where the edge reaches the open end first, the limit is a branched double cover of the sphere (confirmed numerically, F12).
+
+Open:
+
+4. The R^3 hypothesis.
+   The candidates with a branch point as a Sym point lie in S^4, not in a 3-sphere (F11), so they are not tori in R^3.
    How does this fit the hypothesis that one of the three candidates minimizes W among tori in R^3 of the conformal class?
+   At a double arrival the third choice (two σ-nodes) is a CMC torus in S^3 (F14).
 5. Do the three candidates for a rectangular τ lie in \bbR^3, as in the known cases?
+6. Where in F_6 do candidates 2 and 3 exist? Is the boundary (where the arrival reaches t = 0, F15) the curve of the genus 2 paper where the closure of \calS^2 meets the open ends? (That curve is stated for the paper's τ in \calF_3; how it corresponds to the internal τ here is unchecked.)
+7. The "(or not)" branches: what are the candidates on the genus 1 edge continued past candidate 1 without opening, and how should they enter the tree?
