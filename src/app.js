@@ -172,7 +172,10 @@ function readHash() {
 
 // ------------------------------------------------------------------ computation scheduling
 
-const viewer = new Viewer($('view'));
+// the active viewer (the one the tree's dot drives); with three candidates side by side there are three
+let viewer = new Viewer($('view'));
+const viewers = [viewer, null, null];
+const eachViewer = (fn) => viewers.forEach((v) => v && fn(v));
 let worker = null, busy = false, busyFull = false, pending = null, reqId = 0, shownId = 0;
 let fullTimer = null, needFrame = true, last = null;
 const jobInfo = new Map(); // job id -> what the job computed
@@ -521,6 +524,118 @@ function refreshAlphaValues() {
   });
 }
 
+// ------------------------------------------------------------------ three candidates side by side
+
+// The screen in quarters: candidate 1, 2 and 3 in three panes, the panel in the fourth. Each pane is a
+// branch of the tree: the genus 1 edge (and the branch that does not open the node) for candidate 1, the
+// genus 2 edge with alpha_1 + alpha_2 for candidate 2, and with alpha_1 + the remaining pair for
+// candidate 3. The pane of the branch where the tree's dot is follows the dot (the active pane, drawn by the
+// usual pipeline); the others show their candidate, computed by their own worker.
+const panes = { on: false, active: 0, specs: [null, null, null], res: [null, null, null], framed: [false, false, false], worker: null, id: 0 };
+/** The pane of a sample of the tree and its view index. */
+function paneOf(sm, vi) {
+  if (!sm) return 0;
+  if (sm.edge === 2) return vi === 0 ? 1 : 2;
+  if (sm.views.length > 1 && sm.edge === 1) return vi === 0 ? 0 : 2; // the double arrival
+  return 0;
+}
+/** What each pane shows when the dot is elsewhere: { i (sample), v (view), label } or null. */
+function paneSpecs(T) {
+  const S = T.samples, node = (lab) => T.nodes.find((n) => n.label === lab);
+  const n1 = node('candidate 1'), n23 = node('candidates 2, 3'), nD = node('candidates 1, 2, 3'), nO = node('open end');
+  const sp = [null, null, null];
+  if (nD) return [{ i: nD.index, v: 0, label: 'Candidate 1 (double arrival)' }, { i: nD.index, v: 0, label: 'Candidate 2 (= candidate 1 at a double arrival)' }, { i: nD.index, v: 1, label: 'Candidate 3 (double arrival)' }];
+  if (n1) sp[0] = { i: n1.index, v: 0, label: 'Candidate 1' };
+  if (n23) { sp[1] = { i: n23.index, v: 0, label: 'Candidate 2' }; sp[2] = { i: n23.index, v: 1, label: 'Candidate 3' }; }
+  else if (nO) {
+    const e2 = S.map((x, k) => k).filter((k) => S[k].edge === 2);
+    const k = e2.reduce((b, q) => (Math.abs(Math.log(S[q].t / 0.01)) < Math.abs(Math.log(S[b].t / 0.01)) ? q : b), e2[0]);
+    sp[1] = { i: k, v: 0, label: `Candidate 2 near the open end (t = ${fixed(S[k].t, 3)})` };
+  }
+  return sp;
+}
+const PANE_EMPTY = ['No candidate 1', 'No candidate 2', 'No candidate 3: the genus 2 edge ends at an open end'];
+/** The surface parameters of a pane (one cell of the closing lattice, as params() for a candidate). */
+function paneParams(spec) {
+  const sm = cand.tree.samples[spec.i], view = sm.views[spec.v];
+  const [e1, e2] = view.lattice, l1 = Math.hypot(...e1), l2 = Math.hypot(...e2), m = Math.max(l1, l2), res = Math.min(state.res, 160);
+  const n1 = Math.max(3, Math.round((res * l1) / m)), n2 = Math.max(3, Math.round((res * l2) / m));
+  return { alphas: sm.alphas, theta0: 0, tau: [], z0: [0, 0], phi: 0, width: 1, height: 1, nx: n1, ny: n2, hmax: state.hmax,
+    gen: { lams: view.syms.map((p) => p.lam), signs: view.syms.map((p) => p.sign), projection: state.gen.proj }, cell: view.lattice,
+    sCoords: Array.from({ length: n1 }, (_, i) => (i * l1) / (n1 - 1)), tCoords: Array.from({ length: n2 }, (_, j) => (j * l2) / (n2 - 1)) };
+}
+function paneLabels() {
+  [0, 1, 2].forEach((p) => {
+    const sp = panes.specs[p];
+    $(`plabel${p + 1}`).textContent = p === panes.active && cand.sampleNote ? `Following the tree: ${cand.sampleNote.split('\n')[0]}` : sp ? sp.label : PANE_EMPTY[p];
+    $(p ? `pane${p + 1}` : 'stage').classList.toggle('active', panes.on && p === panes.active);
+  });
+}
+/** Show pane p's own candidate (when it is not the active pane). */
+function paneShow(p) {
+  const v = viewers[p], r = panes.res[p];
+  if (!v) return;
+  v.canvas.style.visibility = panes.specs[p] ? 'visible' : 'hidden';
+  if (!r || p === panes.active) return;
+  applyTurn(r);
+  const { vals, range } = colourValues(r);
+  v.setSurface(r, vals);
+  v.setStyle(textureStyle(range));
+  v.setMarkers([]);
+  if (!panes.framed[p]) { v.frame(); panes.framed[p] = true; }
+}
+function refreshPanes() { if (panes.on) [0, 1, 2].forEach(paneShow); }
+function computePanes() {
+  if (!panes.worker) {
+    panes.worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+    panes.worker.onmessage = (e) => {
+      const { id, result } = e.data;
+      if (!result || Math.floor(id / 10) !== panes.id) return;
+      panes.res[id % 10] = result;
+      paneShow(id % 10);
+    };
+  }
+  panes.id++;
+  panes.res = [null, null, null];
+  panes.framed = [false, false, false];
+  panes.specs.forEach((sp, p) => { if (sp) panes.worker.postMessage({ id: panes.id * 10 + p, params: paneParams(sp) }); });
+  [0, 1, 2].forEach(paneShow);
+  paneLabels();
+}
+/** Make pane p the one the dot drives; the previous one goes back to its candidate. */
+function setActivePane(p) {
+  if (p === panes.active) { paneLabels(); return; }
+  const prev = panes.active;
+  panes.active = p;
+  viewers[prev].setMarkers([]);
+  viewer = viewers[p];
+  viewer.canvas.style.visibility = 'visible';
+  paneShow(prev);
+  paneLabels();
+}
+$('quarters').addEventListener('change', () => {
+  panes.on = $('quarters').checked;
+  document.body.classList.toggle('quarters', panes.on);
+  $('pane2').hidden = $('pane3').hidden = !panes.on;
+  if (panes.on && !viewers[1]) {
+    [1, 2].forEach((p) => {
+      const v = new Viewer($(`view${p + 1}`));
+      v.setBackground(state.bg);
+      v.setScale(1 / (2 * state.H));
+      v.setStyle({ gridStep: state.gridStep, lineWidth: state.lineW, front: $('front').value, back: $('back').value, ...textureStyle() });
+      viewers[p] = v;
+    });
+  }
+  const sm = cand.tree && state.cell ? cand.tree.samples[cand.index] : null;
+  viewers[panes.active].setMarkers([]);
+  panes.active = panes.on ? paneOf(sm, +$('cand2Pick').value || 0) : 0;
+  viewer = viewers[panes.active];
+  viewer.canvas.style.visibility = 'visible';
+  if (panes.on && cand.tree) { panes.specs = paneSpecs(cand.tree); computePanes(); } else paneLabels();
+  needFrame = true;
+  changed(false);
+});
+
 // ------------------------------------------------------------------ candidates (tree.js)
 
 // Candidate 1 for the internal tau: computed in its own worker; on success the spectral data, the two
@@ -609,6 +724,7 @@ function showSample(i) {
   pick.value = String(Math.min(keep, sm.views.length - 1));
   pick.hidden = sm.views.length < 2;
   const v = sm.views[+pick.value];
+  if (panes.on) setActivePane(paneOf(sm, +pick.value));
   if (anim) stopAnim();
   state.alphas = sm.alphas.map((a) => a.slice());
   state.gen = { ...state.gen, on: true, lams: v.syms.map((p) => p.lam.slice()), signs: v.syms.map((p) => p.sign) };
@@ -621,6 +737,7 @@ function showSample(i) {
   cand.sampleNote = `${sm.edge === 3 ? 'Genus 1, not opened' : `Genus ${sm.edge}`}${sm.node ? `, ${sm.node}` : ''}: ${sm.edge === 1 || sm.edge === 3 ? `α = −${fixed(-sm.alphas[0][0], 5)}, t = ${fixed(sm.t, 5)}` : `t = ${sm.t < 0.01 ? sm.t.toExponential(2) : fixed(sm.t, 4)}`}, W = ${fixed(sm.W / PI ** 2, 4)} π² (closing lattice).\n${viewName(v.key)}: ${v.ripe ? 'ripe, a torus' : 'not ripe, a plane'}`;
   if (towardsOpenEnd()) cand.sampleNote += ' (the spikes mark the four half-periods, where the limit, the sphere covered twice, is branched)';
   $('treeNote').textContent = cand.sampleNote;
+  if (panes.on) paneLabels();
 }
 /** Whether the current sample is candidate 2 on a genus 2 edge that ends at an open end. */
 function towardsOpenEnd() {
@@ -785,6 +902,7 @@ function requestCandidate(tau, opts = {}) {
         idx = main.length ? main[main.length - 1].index : S.length - 1;
       }
       treeView.set({ index: idx });
+      if (panes.on) { panes.specs = paneSpecs(cand.tree); computePanes(); }
       if (o.show === false) { cand.index = idx; return; }
       showSample(idx);
       if (!cand.pending && !o.place) needFrame = true;
@@ -937,26 +1055,26 @@ function slider(parent, { label, min: lo, max: hi, step, get, set, digits = 3, u
 const turnSliders = [0, 1].map((i) => slider($('turnRows'), {
   label: `4D turn ${i ? 'y' : 'x'}`, title: `Turn the surface in R⁴ in the plane of ${i ? 'y' : 'x'} and the dropped fourth coordinate`,
   min: -PI, max: PI, step: 0.001, unit: PI, suffix: 'π', get: () => state.turn[i],
-  set: (v) => { state.turn[i] = v; if (last) show(last); },
-  reset: { title: 'Back to 0', onClick: () => { state.turn[i] = 0; turnSliders[i].refresh(); if (last) show(last); } },
+  set: (v) => { state.turn[i] = v; if (last) show(last); refreshPanes(); },
+  reset: { title: 'Back to 0', onClick: () => { state.turn[i] = 0; turnSliders[i].refresh(); if (last) show(last); refreshPanes(); } },
   recompute: false,
 }));
 const appearanceSliders = [
   slider($('appearanceRows'), {
     label: 'Line spacing', min: 0.02, max: 2, step: 0.001, get: () => state.gridStep,
-    set: (v) => { state.gridStep = Math.max(0.005, v); viewer.setStyle({ gridStep: state.gridStep }); },
+    set: (v) => { state.gridStep = Math.max(0.005, v); eachViewer((w) => w.setStyle({ gridStep: state.gridStep })); },
     recompute: false,
   }),
   slider($('appearanceRows'), {
     label: 'Line width', min: 0.2, max: 2.5, step: 0.01, digits: 2, get: () => state.lineW,
-    set: (v) => { state.lineW = v; viewer.setStyle({ lineWidth: v }); },
+    set: (v) => { state.lineW = v; eachViewer((w) => w.setStyle({ lineWidth: v })); },
     recompute: false,
   }),
 ];
 const transpSlider = slider($('appearanceRows'), {
   label: 'Transparency', title: 'How much of the surface shows through (the parameter lines stay opaque)',
   min: 0, max: 1, step: 0.01, digits: 2, get: () => state.transp,
-  set: (v) => { state.transp = Math.min(1, Math.max(0, v)); viewer.setStyle({ opacity: 1 - state.transp }); },
+  set: (v) => { state.transp = Math.min(1, Math.max(0, v)); eachViewer((w) => w.setStyle({ opacity: 1 - state.transp })); },
   recompute: false,
 });
 appearanceSliders.push(transpSlider);
@@ -1001,15 +1119,16 @@ function showFamily() {
 $('colour').addEventListener('change', () => {
   state.colour = $('colour').value;
   if (last) recolour(); else viewer.setStyle(textureStyle());
+  refreshPanes();
 });
-$('grid').addEventListener('change', () => { state.grid = $('grid').checked; viewer.setStyle(textureStyle()); });
-$('front').addEventListener('input', () => viewer.setStyle({ front: $('front').value }));
-$('back').addEventListener('input', () => viewer.setStyle({ back: $('back').value }));
+$('grid').addEventListener('change', () => { state.grid = $('grid').checked; viewer.setStyle(textureStyle()); refreshPanes(); });
+$('front').addEventListener('input', () => eachViewer((w) => w.setStyle({ front: $('front').value })));
+$('back').addEventListener('input', () => eachViewer((w) => w.setStyle({ back: $('back').value })));
 $('bg').addEventListener('input', () => setBackground($('bg').value));
 function setBackground(c) {
   state.bg = c;
   $('stage').style.background = c;
-  viewer.setBackground(c);
+  eachViewer((w) => w.setBackground(c));
 }
 $('adapt').addEventListener('change', () => { state.adapt = $('adapt').checked; changed(false); });
 $('res').addEventListener('change', () => { state.res = +$('res').value; changed(false); });
@@ -1106,7 +1225,7 @@ function refreshAll() {
   if (!$('res').value) { $('res').add(new Option(String(state.res), String(state.res))); $('res').value = String(state.res); }
   $('acc').value = state.adaptive ? 'adaptive' : String(state.hmax);
   if (!$('acc').value) { $('acc').add(new Option(`h ≤ ${state.hmax}`, String(state.hmax))); $('acc').value = String(state.hmax); }
-  viewer.setScale(1 / (2 * state.H));
+  eachViewer((w) => w.setScale(1 / (2 * state.H)));
   $('colour').value = state.colour;
   viewer.setStyle({ gridStep: state.gridStep, lineWidth: state.lineW, ...textureStyle() });
 }

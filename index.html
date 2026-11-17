@@ -31,6 +31,21 @@
   }
   #busy.on { opacity: 0.8; animation: pulse 0.9s ease-in-out infinite alternate; }
   @keyframes pulse { from { transform: scale(0.6); } to { transform: scale(1); } }
+  /* three candidates side by side: the screen in quarters, the panel in the fourth */
+  .pane.extra { position: relative; min-width: 0; min-height: 0; }
+  .pane.extra canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  .plabel {
+    position: absolute; left: 14px; bottom: 10px; right: 14px; font-size: 15px; font-style: italic; color: var(--ink);
+    pointer-events: none; display: none;
+  }
+  body.quarters { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+  body.quarters #stage { grid-area: 1 / 1; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+  body.quarters #pane2 { grid-area: 1 / 2; border-bottom: 1px solid var(--rule); }
+  body.quarters #pane3 { grid-area: 2 / 1; border-right: 1px solid var(--rule); }
+  body.quarters #panel { grid-area: 2 / 2; border-left: 0; min-height: 0; }
+  body.quarters .plabel { display: block; }
+  body.quarters #keys { display: none; }
+  .pane.active .plabel { color: var(--accent); }
   #keys {
     position: absolute; left: 14px; bottom: 10px; font-size: 14.5px; font-style: italic; color: var(--muted);
     pointer-events: none;
@@ -202,12 +217,16 @@
 </style>
 </head>
 <body>
-<div id="stage">
+<div id="stage" class="pane">
   <canvas id="view"></canvas>
+  <div class="plabel" id="plabel1"></div>
   <div id="status"></div>
   <div id="busy"></div>
   <div id="keys">Drag: rotate · shift-drag: roll · wheel / ±: zoom · WASD QE: move · F: frame · R: reset</div>
 </div>
+
+<div class="pane extra" id="pane2" hidden><canvas id="view2"></canvas><div class="plabel" id="plabel2"></div></div>
+<div class="pane extra" id="pane3" hidden><canvas id="view3"></canvas><div class="plabel" id="plabel3"></div></div>
 
 <aside id="panel">
   <h1>Willmore candidates</h1>
@@ -235,6 +254,7 @@
       <p class="note" id="mapNote"></p>
       <div class="btnrow"><button class="tbtn" id="cand2Btn" type="button" title="Candidate 1, then open its node into genus 2 and follow the τ-preserving flow until the remaining pair arrives: candidates 2 and 3 (and the third choice of Sym points) on that spectral curve">Find candidates 2, 3</button>
         <select id="cand2Pick" hidden aria-label="The two generalized Sym points"></select></div>
+      <label class="cb"><input type="checkbox" class="chk" id="quarters"><span>Three candidates side by side</span></label>
       <div class="btnrow"><button class="tbtn" id="cand1Btn" type="button" title="Open the pair for 1 at the starting scale and follow the genus 1 edge to the first arrival of a marked pair at the unit circle">Find candidate 1</button></div>
       <canvas id="treeView" tabindex="0" aria-label="The tree: W against the path through the genus 0, 1 and 2 edges; drag the dot to draw the immersion there" title="The tree of the internal τ: W (on the closing lattice, in units of π²) along the genus 1 and 2 edges, from the opening to the candidates; dashed blue: the genus 1 edge continued without opening the node, to candidate 1′. Drag the dot (it snaps to the nodes) or use the arrow keys (up and down switch to and from the dashed branch) to draw the immersion at that point; double-click shows W from 0. Before the Sym points are ripe it is a plane, invariant under homotheties."></canvas>
       <p class="note" id="treeNote"></p>
