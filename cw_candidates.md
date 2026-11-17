@@ -134,3 +134,4 @@ Open:
 5. Do the three candidates for a rectangular τ lie in \bbR^3, as in the known cases?
 6. Where in F_6 do candidates 2 and 3 exist? Is the boundary (where the arrival reaches t = 0, F15) the curve of the genus 2 paper where the closure of \calS^2 meets the open ends? (That curve is stated for the paper's τ in \calF_3; how it corresponds to the internal τ here is unchecked.)
 7. The "(or not)" branches: what are the candidates on the genus 1 edge continued past candidate 1 without opening, and how should they enter the tree?
+8. Can the regions of F_6 choose the candidate, instead of explicit buttons (Find candidate 1, Find candidates 2, 3, the view picker)? That is, does the position of the internal τ in F_6 (the chamber of the class order, and which side of the boundary of F15 it lies on) determine which candidate to show?
