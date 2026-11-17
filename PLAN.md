@@ -1,6 +1,6 @@
 # cw-families: plan and status
 
-State at the end of 17 November 2026. The mathematics (Ross's sketch, findings F1–F15, open questions) is in `cw_candidates.md`; this file is about the code: what it does, how, and what comes next.
+State on the morning of 18 November 2026. The mathematics (Ross's sketch, findings F1–F16, open questions) is in `cw_candidates.md`; this file is about the code: what it does, how, and what comes next.
 
 ## 1. Goal
 
@@ -20,7 +20,7 @@ State at the end of 17 November 2026. The mathematics (Ross's sketch, findings F
 2. To serve: `python3 serve.py 8765`, then open http://127.0.0.1:8765/.
    1. A link `#k=Re,Im,2` computes candidates 2 and 3 for that internal τ.
    2. `#k=Re,Im` computes candidate 1 only.
-3. Tests: `node test/run.mjs`, 184 checks in about 10 s. They cover F7 (generalized Sym), q and resonance (F3, F6), the tree (candidates 1–3, the open end, double arrivals, unripe planes, `locateOnTree`), and the inherited CMC code.
+3. Tests: `node test/run.mjs`, about 195 checks in about 10 s. They cover F7 (generalized Sym), q and resonance (F3, F6), the tree (candidates 1–3, the open end, double arrivals, unripe planes, `locateOnTree`), and the inherited CMC code.
 4. Headless checks of the page:
    1. `chromium --virtual-time-budget` never finishes module workers that import other modules.
    2. So use a real-time DevTools-protocol script instead. Node has `WebSocket` and `fetch`, so no packages are needed.
@@ -37,14 +37,15 @@ State at the end of 17 November 2026. The mathematics (Ross's sketch, findings F
       3. principal axes;
       4. stereographic from e_4;
       5. drop x_4.
-   4. `roundnessS4`: the distance from a round 2-sphere and the S^4 area after a Möbius normalization.
+   4. `projectPoints` also returns the coordinate it drops (w4), for the texture Fourth coordinate and the 4D turn.
+   5. `roundnessS4`: the distance from a round 2-sphere and the S^4 area after a Möbius normalization.
 2. `src/cmc/resonance.js`: the map q and resonance pairs.
    1. `QMap`: q = (log μ_1, log μ_i) by graded Gauss–Legendre quadrature from α_1; `resonance()` is Newton with lattice reduction.
    2. `genus0Resonance`: the closed forms of F3.
    3. `classifyPair`: off, on or node, with a signed distance. A pair within 1e-8 of S^1 counts as on it.
 3. `src/cmc/tree.js`: the tree.
    1. `internalFrame`: the internal τ as a point of F_6.
-   2. `genus1Edge`, `candidate1`, `genus2Anchor`, `genus2Edge`, `candidate2`.
+   2. `genus1Edge`, `candidate1` (followed to the second event), `genus1Branch` (candidate 1′), `genus2Anchor`, `genus2Edge`, `candidate2`.
    3. `candidate`: the characters, the closing lattice, W and the external τ.
    4. `refineArrival`: regula falsi.
    5. `treeOf`: the drawable path of samples.
@@ -53,7 +54,7 @@ State at the end of 17 November 2026. The mathematics (Ross's sketch, findings F
    8. `openEndShapes`.
 4. Spectral-curve modules:
    1. `src/cmc/periods.js`: periods of the real-normalized differentials Θ_w.
-   2. `src/cmc/whitham.js`: `ellVector`, the genus 2 period vectors. `WhithamCurve` is only used by tests and the worker's unused `family` message.
+   2. `src/cmc/whitham.js`: `ellVector`, the genus 2 period vectors. `WhithamCurve` is only used by tests.
    3. `src/cmc/leaf.js`: `leafData`, `willmoreFrame` (W by the residue formula).
    4. `src/cmc/genus2.js`: `openEndTau`.
 5. Inherited CMC modules:
@@ -67,7 +68,7 @@ State at the end of 17 November 2026. The mathematics (Ross's sketch, findings F
    4. `src/spectral-widget.js`: the λ-plane.
    5. `src/tau-pad.js`: the F_6 pad.
    6. `src/viewer.js`: three.js, including `setMarkers` for the spikes.
-   7. `src/period-pad.js`: unused since its panel was removed.
+7. Precomputed data: `tools/f6map.mjs` writes `data/f6map.json`. On a grid of step 0.05 over F_6 (Im τ ≤ 2.4) it records the kind of tree (candidates, open end, double arrival, none) and W of candidates 1, 2 and 1′, and the boundary between candidates and open end (bisected along the grid edges, joined by marching squares). About 10 minutes; rerun after changes to the tree code.
 
 ## 4. How the tree is computed (`candidate2(τ)`)
 
@@ -84,6 +85,7 @@ State at the end of 17 November 2026. The mathematics (Ross's sketch, findings F
    3. The two remaining marked pairs are re-solved at each step.
    4. An arrival (a passage through a σ-node, onto S^1 or off it) is refined by `refineArrival`, in 10–15 solves.
    5. A double arrival, where the other pair is a σ-node at the same point (F14), is flagged.
+   6. The edge is followed to the second event, for the branch that does not open the node (candidate 1′, F16).
 4. **Candidate 1** (`candidate`).
    1. The monodromy characters at both Sym points are found by shooting along the lattice, at steps of stepCap/4.
    2. The closing lattice is doubled when the characters differ (F8).
@@ -112,15 +114,15 @@ State at the end of 17 November 2026. The mathematics (Ross's sketch, findings F
 ## 5. The app
 
 1. **Candidates section.**
-   1. Internal τ: fields and the F_6 pad. Dragging recomputes, and the latest request wins.
-   2. Buttons: Find candidates 2, 3, and Find candidate 1.
+   1. Internal τ: fields and the F_6 pad. Dragging recomputes, and the latest request wins. Under the pad, the map of F_6 (if `data/f6map.json` is present): where candidates 2 and 3 exist (blue shading: open end; blue line: the boundary), or W of candidate 1, 2 or 1′.
+   2. Buttons: Find candidates 2, 3, and Find candidate 1; the checkbox Three candidates side by side (see 6).
    3. The view picker: the Sym-point pairs at the current sample.
    4. The tree view.
    5. The sample note, with the factors c_k: f(z + e_k) = c_k f(z) on the cell.
    6. The candidate note, and the Check the limit shape button at open ends.
 2. **Tree view.**
    1. W on the closing lattice, in units of π², against the path. The opening is on the left axis, genus 1 takes the first third of the width and genus 2 the rest.
-   2. The nodes: opening, candidate 1, candidates 2 and 3 (or "candidates 1, 2, 3" at a double arrival), open end.
+   2. The nodes: opening, candidate 1, candidates 2 and 3 (or "candidates 1, 2, 3" at a double arrival), open end, and candidate 1′ at the end of the dashed blue branch (the genus 1 edge continued without opening the node). Up and down arrows switch between the genus 2 edge and the branch.
    3. Interaction: the dot is dragged and snaps to the nodes, or stepped with the arrow keys; shift steps by 10. Double-click shows W from 0.
 3. **The dot drives the drawing.**
    1. The 3D view shows the sample.
@@ -137,8 +139,9 @@ State at the end of 17 November 2026. The mathematics (Ross's sketch, findings F
    1. a wall of F_6 crossed (the class order changes, and the candidates continue);
    2. a change of the kind of tree;
    3. a jump of W at a node.
-6. **Appearance and presets.**
-   1. The projection \bbR^4 → \bbR^3 is in Appearance.
+6. **Three candidates side by side:** the screen in quarters, candidates 1, 2, 3 in three panes and the panel in the fourth. Each pane is a branch of the tree: the genus 1 edge and the branch to candidate 1′ (pane 1), the genus 2 edge with α_1 + α_2 (pane 2), and with α_1 + the remaining pair (pane 3). The pane where the dot is follows it (label in rust, with the status line); the others show their candidate, computed by their own worker at resolution ≤ 160.
+7. **Appearance and presets.**
+   1. The projection \bbR^4 → \bbR^3 is in Appearance, with the 4D turn sliders (rotations in the (x, w) and (y, w) planes before dropping w, applied on the main thread without recomputing); the texture Fourth coordinate colours by the dropped coordinate.
    2. Presets:
       1. the Clifford torus;
       2. candidates at 0.45 + 0.95i;
@@ -164,34 +167,27 @@ State at the end of 17 November 2026. The mathematics (Ross's sketch, findings F
 9. Speed: candidate frames at stepCap/4, regula falsi for the arrivals, 20% steps in genus 1, and the open-end diagnostics on request.
    1. A tree with an arrival: 344 → about 60 ms.
    2. An open end: 2–5 s → about 0.25 s.
-10. Tried and dropped: continuing the tree in τ (starting guesses from the previous tree).
+10. Night of 17–18 November: README, page title and `about.html` rewritten for the candidates; `period-pad.js` and the worker's `family` message removed; the branch to candidate 1′ (F16); the map of F_6; colouring by and turning in the fourth dimension; three candidates side by side.
+11. Tried and dropped: continuing the tree in τ (starting guesses from the previous tree).
     1. The cost is the two full q integrals per solve, not the Newton iterations.
     2. Measured gain 8–15%.
 
 ## 7. Next steps
 
-1. **The "(or not)" branches.**
-   1. Continue the genus 1 edge past candidate 1 without opening, to the arrival of the third pair.
-   2. Decide how branches spread horizontally in the tree view.
-2. **Curves in F_6** (next direction 5). Draw on the τ pad where candidates 2 and 3 exist and where the edge ends at an open end.
-   1. The transition is continuous: the arrival goes to t = 0 (F15).
-   2. It can be computed directly as the curve where the arrival is at t = 0, or from the real locus of the genus 2 paper, and checked against a sparse grid.
-   3. Also mark the walls of F_6 where double arrivals happen.
-3. **Layout** (next direction 6): one quarter for the controls, and three quarters for candidates 1, 2 and 3. These are one canvas with three viewports.
-4. **4D visualization** (next direction 3), for example:
-   1. colour by the coordinate dropped by the balanced projection;
-   2. a "4D rotation" drag that moves the projection pole on S^4.
-5. **Smoother dragging:**
+1. **The map of F_6:**
+   1. compare its boundary with the curve of the genus 2 paper (open question 6 of `cw_candidates.md`);
+   2. use the regions to choose the candidate shown (open question 8);
+   3. refine the grid near the boundary, or extend it above Im τ = 2.4.
+2. **The branches:** what candidate 1′ means (open question 7); later branchings (the genus 2 edge continued past candidates 2 and 3 without opening; genus 3).
+3. **Smoother dragging:**
    1. a lower resolution while dragging;
    2. cheaper q integrals (fewer nodes on the graded mesh); these are now the main cost of an edge.
-6. **Questions for the mathematics** (see `cw_candidates.md`):
+4. **Questions for the mathematics** (see `cw_candidates.md`):
    1. The ℝ^3 hypothesis: the choice "node a + node b" at a double arrival is a CMC torus in S^3 (F14).
-   2. A sweep of W over F_6.
-   3. The external τ.
-7. **Housekeeping:**
-   1. Rewrite the README, the page title and subtitle ("CMC surfaces"), and `about.html`; they still describe cmc-immersion.
-   2. Remove `src/period-pad.js` and the worker's `family` message, both unused.
-   3. Decide about the deleted `cmc_spectral_to_immersion.md`: it is deleted in the working tree but not committed, and `cmc.js` cites it.
+   2. The external τ, and the pairs of candidates with the same external τ (F16).
+5. **Housekeeping:**
+   1. Decide about the deleted `cmc_spectral_to_immersion.md`: it is deleted in the working tree but not committed, `cmc.js` cites it, and it is in cmc-immersion.
+   2. Check the references in `about.html` (written from memory).
 
 ## 8. Decisions taken
 

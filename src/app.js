@@ -564,7 +564,13 @@ function paneParams(spec) {
     gen: { lams: view.syms.map((p) => p.lam), signs: view.syms.map((p) => p.sign), projection: state.gen.proj }, cell: view.lattice,
     sCoords: Array.from({ length: n1 }, (_, i) => (i * l1) / (n1 - 1)), tCoords: Array.from({ length: n2 }, (_, j) => (j * l2) / (n2 - 1)) };
 }
+/** The status line and the busy dot go with the active pane. */
+function moveStatus() {
+  const host = $(panes.on && panes.active ? `pane${panes.active + 1}` : 'stage');
+  for (const id of ['status', 'busy']) if ($(id).parentElement !== host) host.appendChild($(id));
+}
 function paneLabels() {
+  moveStatus();
   [0, 1, 2].forEach((p) => {
     const sp = panes.specs[p];
     $(`plabel${p + 1}`).textContent = p === panes.active && cand.sampleNote ? `Following the tree: ${cand.sampleNote.split('\n')[0]}` : sp ? sp.label : PANE_EMPTY[p];
