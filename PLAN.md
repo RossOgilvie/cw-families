@@ -20,7 +20,7 @@ State on the morning of 18 November 2026. The mathematics (Ross's sketch, findin
 2. To serve: `python3 serve.py 8765`, then open http://127.0.0.1:8765/.
    1. A link `#k=Re,Im,2` computes candidates 2 and 3 for that internal τ.
    2. `#k=Re,Im` computes candidate 1 only.
-3. Tests: `node test/run.mjs`, about 195 checks in about 10 s. They cover F7 (generalized Sym), q and resonance (F3, F6), the tree (candidates 1–3, the open end, double arrivals, unripe planes, `locateOnTree`), and the inherited CMC code.
+3. Tests: `node test/run.mjs`, 192 checks in about 10 s. They cover F7 (generalized Sym), q and resonance (F3, F6), the tree (candidates 1–3, the open end, double arrivals, unripe planes, `locateOnTree`), and the inherited CMC code.
 4. Headless checks of the page:
    1. `chromium --virtual-time-budget` never finishes module workers that import other modules.
    2. So use a real-time DevTools-protocol script instead. Node has `WebSocket` and `fetch`, so no packages are needed.
@@ -68,7 +68,7 @@ State on the morning of 18 November 2026. The mathematics (Ross's sketch, findin
    4. `src/spectral-widget.js`: the λ-plane.
    5. `src/tau-pad.js`: the F_6 pad.
    6. `src/viewer.js`: three.js, including `setMarkers` for the spikes.
-7. Precomputed data: `tools/f6map.mjs` writes `data/f6map.json`. On a grid of step 0.05 over F_6 (Im τ ≤ 2.4) it records the kind of tree (candidates, open end, double arrival, none) and W of candidates 1, 2 and 1′, and the boundary between candidates and open end (bisected along the grid edges, joined by marching squares). About 10 minutes; rerun after changes to the tree code.
+7. Precomputed data: `tools/f6map.mjs` writes `data/f6map.json`. On a grid of step 0.05 over F_6 (Im τ ≤ 2.4) it records the kind of tree (candidates, open end, double arrival, none) and W of candidates 1, 2 and 1′, and the boundary between candidates and open end (bisected along the grid edges, joined by marching squares). About 22 minutes; rerun after changes to the tree code.
 
 ## 4. How the tree is computed (`candidate2(τ)`)
 
@@ -80,7 +80,7 @@ State on the morning of 18 November 2026. The mathematics (Ross's sketch, findin
    1. The scale t runs from the vacuum to t = 1/π, where the pair for 1 is a σ-node at λ = −1 (F4).
    2. On the closing lattice, W = 2/(t² Im τ1).
 3. **Genus 1 edge** (`genus1Edge`).
-   1. α = −r, starting at r = 1 and stepping down by 20%, with a linear predictor of the pairs in log r.
+   1. α = −r, starting at r = 1 and stepping down by 20%, with a linear predictor of the pairs in log r, down to r = 1e-4 (candidate 1 exists up to Im τ1 ≈ 3).
    2. t(r) comes from a B-period.
    3. The two remaining marked pairs are re-solved at each step.
    4. An arrival (a passage through a σ-node, onto S^1 or off it) is refined by `refineArrival`, in 10–15 solves.

@@ -115,12 +115,14 @@ Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in
    2. Candidates 2 and 3 merge continuously into the open end. Along Im τ = 0.95 the arrival on the genus 2 edge goes to t = 0 as Re τ decreases to about 0.33 (t = 0.27, 0.14, 0.05, 0.014 at Re τ = 0.45, 0.40, 0.36, 0.34), and W of candidates 2 and 3 tends to 8π.
    3. Across a wall of F_6 the order of the classes changes but the candidates continue: across Re τ = 1/2 candidate 1 is unchanged and the roles of classes 2 and 3 are exchanged (mirror symmetry); on the wall itself there is a double arrival (F14).
    4. No discontinuity of W has been seen in the sweeps so far (the app reports one when it happens between nearby τ).
-   Checked: numerically along a few lines in F_6; the boundary curve of the candidates has not been traced.
+   5. The map of F_6 (`data/f6map.json`, a grid of step 0.05 with Im τ ≤ 2.4): candidates 2 and 3 exist only in narrow regions about the walls Re τ = ±1/2 (where the double arrivals are), widest near Im τ ≈ 0.9 where the chambers 312, 123 and 213 meet, and narrowing towards i∞. Each region is bounded by two curves going up to i∞. Everywhere else the genus 2 edge reaches the open end first. Of 1679 grid points: 167 with candidates 2 and 3, 54 double arrivals, 1424 open ends, and 37 at the cusps and corners without candidate 1.
+   6. Over the map, W of candidate 1 runs from 2.005π² (near the Clifford torus, τ = i) to 8π, and W of candidates 2 and 3, where they exist, from 2.3505π² (on the walls) to 8π (at the boundary).
+   Checked: numerically along a few lines in F_6, and on the grid of the map (the boundary bisected along the grid edges to about 3e-6).
 16. F16: The branch that does not open the node, and candidates in pairs of one conformal class.
    1. Continuing the genus 1 edge past candidate 1 without opening the node, the arrived pair stays over S^1 as two distinct points. At such a point the multipliers are unimodular, so with it as a Sym point the lattice acts by rotations of R^4 about 0 (compare F13).
    2. The branch ends at the next σ-node event: the other pair arriving (at 0.45 + 0.95i at α = −0.28555, W = 2.4857π²; at 0.3 + 0.8i at α = −0.13621, W = 2.5755π²), or the arrived pair leaving S^1 again (at 0.2 + 1.3i at α = −0.05684, W = 2.6700π²). There α and the node are ripe, and give a torus: candidate 1′ (a provisional name). There is no branch at a double arrival.
    3. The external τ depends only on the internal lattice and on the classes of the two Sym points (F8). So candidates 1 and 2 (classes [1] and a) have the same external τ, and so do candidate 3 and candidate 1′ when the other pair arrives (classes [1] and b). At 0.45 + 0.95i: candidates 1 and 2 have external τ −0.0871 + 1.5768i, with W = 2.3131π² and 2.4725π²; candidates 3 and 1′ have external τ 0.1855 + 1.7195i, with W = 2.4725π² and 2.4857π².
-   4. W increases along the branch too.
+   4. W increases along the branch too. Unlike the other candidates, candidate 1′ mostly has W > 8π: at 1503 of the 1578 points of the map where it exists, up to 2.93π². So the argument of F7 for W < 8π does not cover it (the formula is still a conformal immersion, F7.1).
    Checked: numerically (tests at 0.45 + 0.95i, 0.2 + 1.3i and 0.5 + 0.9i), and point 3 by F8.
 
 ## Open questions
@@ -138,7 +140,7 @@ Open:
    How does this fit the hypothesis that one of the three candidates minimizes W among tori in R^3 of the conformal class?
    At a double arrival the third choice (two σ-nodes) is a CMC torus in S^3 (F14).
 5. Do the three candidates for a rectangular τ lie in \bbR^3, as in the known cases?
-6. Where in F_6 do candidates 2 and 3 exist? Is the boundary (where the arrival reaches t = 0, F15) the curve of the genus 2 paper where the closure of \calS^2 meets the open ends? (That curve is stated for the paper's τ in \calF_3; how it corresponds to the internal τ here is unchecked.)
+6. Where in F_6 do candidates 2 and 3 exist? Is the boundary (where the arrival reaches t = 0, F15) the curve of the genus 2 paper where the closure of \calS^2 meets the open ends? (That curve is stated for the paper's τ in \calF_3; how it corresponds to the internal τ here is unchecked.) The map (F15.5) shows two curves going up to i∞ about each wall Re τ = ±1/2, which is at least reminiscent of a curve "tending to i∞ at both ends".
 7. The "(or not)" branches: what are the candidates on the genus 1 edge continued past candidate 1 without opening, and how should they enter the tree?
    Implemented as candidate 1′ (F16), drawn as a dashed branch in the tree view. Its meaning, and whether it should count among the candidates (it shares the conformal class of candidate 3), is open.
 8. Can the regions of F_6 choose the candidate, instead of explicit buttons (Find candidate 1, Find candidates 2, 3, the view picker)? That is, does the position of the internal τ in F_6 (the chamber of the class order, and which side of the boundary of F15 it lies on) determine which candidate to show?
