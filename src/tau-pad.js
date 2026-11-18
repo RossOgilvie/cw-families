@@ -155,7 +155,7 @@ export class TauPad {
    * (viridis over its range), and the boundary between candidates 2, 3 and the open end (blue line).
    */
   _drawMap(ctx, P, k, C, col) {
-    const { data, mode } = this.map, h = data.step / 2;
+    const { data, mode } = this.map;
     const vals = [];
     if (mode !== 'regions') for (const row of data.grid) for (const p of row) if (p && Number.isFinite(p[mode])) vals.push(p[mode]);
     const lo = Math.min(...vals), hi = Math.max(...vals);
@@ -172,8 +172,9 @@ export class TauPad {
         fill = `rgba(${r}, ${g}, ${b}, 0.55)`;
       }
       if (!fill) continue;
-      // cell edges on whole pixels, so that neighbouring cells abut without overlapping (no seams)
-      const [x0, y0] = P([data.xs[i] - h, data.ys[j] + h]).map(Math.round), [x1, y1] = P([data.xs[i] + h, data.ys[j] - h]).map(Math.round);
+      // cell edges from the indices (shared exactly by neighbouring cells) on whole pixels: no seams
+      const ex = (k) => data.xs[0] + (k - 0.5) * data.step, ey = (k) => data.ys[0] + (k - 0.5) * data.step;
+      const [x0, y0] = P([ex(i), ey(j + 1)]).map(Math.round), [x1, y1] = P([ex(i + 1), ey(j)]).map(Math.round);
       ctx.fillStyle = fill;
       ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
     }
