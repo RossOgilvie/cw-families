@@ -12,7 +12,7 @@ import { RootFlow, symData } from '../src/cmc/rootflow.js';
 import { ellipticKE, nodalBoundary, f0, openEndTau } from '../src/cmc/genus2.js';
 import { PairIntegrator, leftEigenvector, nuAt, qmul, qdiv, computeGenSurface, doubleCoverSurface } from '../src/cmc/gensym.js';
 import { QMap, genus0Resonance, classifyPair } from '../src/cmc/resonance.js';
-import { genus0Edge, genus1Scale, candidate1, candidate2, genus2Edge, reduceTau, torusBasis, kOf, treeOf, paritySublattice, dualBasis, locateOnTree, familyOf, superlattices, sameClass } from '../src/cmc/tree.js';
+import { genus0Edge, genus1Scale, candidate1, candidate2, genus2Edge, reduceTau, torusBasis, kOf, treeOf, paritySublattice, dualBasis, locateOnTree, familyOf, familyStep, superlattices, sameClass } from '../src/cmc/tree.js';
 import { generator } from '../src/cmc/cmc.js';
 import {
   TauFlow, leafData, periodsOf, rationalPlanes, saturate, reduceFrame, classOrder, nearbyPeriods,
@@ -754,6 +754,10 @@ console.log('the candidate family of a conformal class (familyOf; the proposal, 
     const w = N - 1 - v;
     for (let e = 0; e < 3; e++) odd = Math.max(odd, Math.abs(D.pos[3 * v + e] - D.pos[3 * w + e]));
   }
+  // dragging: the members continued to a nearby class agree with the full computation there
+  const H = familyStep(G, [0.44, 1.21]), K = familyOf([0.44, 1.21]);
+  check('familyStep from 0.45 + 1.2i to 0.44 + 1.21i: W of the members as computed afresh (relative)',
+    Math.max(...H.members.map((m, i) => (m.member && K.members[i].member ? Math.abs(m.member.W / K.members[i].member.W - 1) : 1))), 1e-6);
   check('double cover: on the unit sphere', off, 1e-6);
   check('double cover: f(-z) = f(z) on the cell centred at 0', odd, 1e-6);
 }

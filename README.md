@@ -38,7 +38,10 @@ internal τ, and `#k=Re,Im` candidate 1. *Copy link* produces such a link for th
   half-period h of the torus, the member over the superlattice ⟨1, τ̂⟩ + h: the curve found with the
   least W if that is at most 8π (genus 1 or 2), otherwise the round sphere covered twice. *Its tree*
   (or double-clicking a member's pane) walks the tree of the member's internal τ, with the dot on the
-  member when it is a node of that tree. The note lists every curve found.
+  member when it is a node of that tree. The note lists every curve found. While τ̂ is dragged, each
+  member is continued from the last one and drawn at low resolution; on release the full search runs.
+  The pad shows the phases of the family (`data/f1map.json`): which member has the least W, where a
+  member becomes the double cover or changes genus. Spikes mark the four branch points of a double cover.
 - **Viewer:** drag rotates, shift+drag rolls, wheel or `+`/`−` zooms, `WASD` moves in the screen
   plane, `Q`/`E` toward/away, `F` frames the surface, `R` resets. Touch: drag, pinch, twist.
 - **Tree:** the internal τ, as numbers or as a point of the F₆ pad (drag it; the latest

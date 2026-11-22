@@ -136,7 +136,13 @@ Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in
    6. Limits of the search:
       1. Over a superlattice with Im τ̃ above about 3 no nodal curve is found. The edges end at r = 1e-4, and r = 1e-8 does not help. Example: τ̂ = 0.1855 + 1.7195i, h = ½, internal 0.371 + 3.439i.
       2. Genus 2 curves are only searched on the tree that opens the shortest class first.
-   Checked: numerically, at the classes named above (tests in `test/run.mjs` for 1.5i and 0.45 + 1.2i). The selection rule in point 5 is a reading of the proposal, not a theorem.
+   7. The map of F_1 (`data/f1map.json`, grid step 0.025, Im τ̂ ≤ 2.3; the labels h are those of the basis (1, τ̂)):
+      1. The member h = (1 + τ̂)/2 has the least W almost everywhere. Its superlattice is the one that is square at τ̂ = i.
+      2. Two exceptions: small patches near Re τ̂ = ±½ at Im τ̂ ≈ 1.55–1.65, where h = ½ is least, and the top corners, where all three members are double covers. These corners are bounded by the curve where the member (1 + τ̂)/2 reaches 8π, from about (±½, 1.45) to (±0.3, 2.3). This is the "relatively small set of conformal classes" of the proposal where the minimal energy is 8π.
+      3. The member (1 + τ̂)/2 changes from genus 1 to genus 2 (genus 2 with less W) above a curve from about (±½, 1.3) to (0, 1.83).
+      4. The least W of genus 1 reaches 8π on a curve from (0, 2.12) down to about (±0.4, 1.6), meeting Re τ̂ = ±½ at about 1.65. This has the shape of the white curve of the proposal's Fig. 1, but there the curve meets Re τ̂ = ±½ lower, at about 1.4 (read off the figure; unchecked why).
+      5. The member h = ½ is not found above Im τ̂ ≈ 1.5 (F17.6).
+   Checked: numerically, at the classes named above (tests in `test/run.mjs` for 1.5i and 0.45 + 1.2i), and on the grid of the map. The selection rule in point 5 is a reading of the proposal, not a theorem.
 
 ## Open questions
 

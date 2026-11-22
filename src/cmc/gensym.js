@@ -603,7 +603,9 @@ export function meshNormals(pos, nx, ny, nrm) {
 export function doubleCoverSurface(tauExt, { n = 160, L = 4 } = {}) {
   const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
   const [tx, ty] = tauExt, lt = Math.hypot(tx, ty);
-  const n1 = Math.max(3, Math.round((n * 1) / Math.max(1, lt))), n2 = Math.max(3, Math.round((n * lt) / Math.max(1, lt)));
+  // odd sizes: the half-periods (the branch points) are grid points
+  const odd = (k) => 2 * Math.max(1, Math.round((k - 1) / 2)) + 1;
+  const n1 = odd((n * 1) / Math.max(1, lt)), n2 = odd((n * lt) / Math.max(1, lt));
   // q = e^{i pi tau}
   const qa = Math.exp(-Math.PI * ty), qp = Math.PI * tx;
   const qpow = (e) => [qa ** e * Math.cos(qp * e), qa ** e * Math.sin(qp * e)];

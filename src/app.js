@@ -5,9 +5,9 @@ import { SpectralWidget, MAX_GENUS } from './spectral-widget.js';
 import { shapeFlows, kappa0, hopfArg } from './cmc/cmc.js';
 import { meshNormals } from './cmc/gensym.js';
 import { commonRootsOnCircle } from './cmc/periods.js';
-import { TauPad } from './tau-pad.js';
+import { TauPad, FAMILY_COLOURS } from './tau-pad.js';
 import { TreeView } from './tree-view.js';
-import { locateOnTree, paritySublattice, dualBasis } from './cmc/tree.js';
+import { locateOnTree, paritySublattice, dualBasis, reduceTau } from './cmc/tree.js';
 
 const sameTau = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9;
 import { ellVector } from './cmc/whitham.js';
@@ -545,17 +545,18 @@ function refreshAlphaValues() {
 // own pane, computed by its own worker; the fourth pane is the tree (the usual pipeline, driven by the dot).
 // Walking a member's tree computes the tree of its internal lattice and puts the dot on the member when it
 // is a node of that tree.
-const fam = { tau: null, worker: null, id: 0, busy: false, pending: null, R: null, res: [null, null, null], framed: [false, false, false],
-  follow: null, surf: null, sid: 0 };
+const fam = { tau: null, gen: 0, lanes: null, full: null, dragging: false, R: null, res: [null, null, null], framed: [false, false, false],
+  follow: null, surf: null, sid: 0, surfBusy: [false, false, false], surfPending: [false, false, false] };
 const famViewers = [null, null, null];
 const quartersOn = () => document.body.classList.contains('quarters');
 const cfmt = (x) => `${fixed(x[0], 4)} ${x[1] < 0 ? '−' : '+'} ${fixed(Math.abs(x[1]), 4)}i`;
 const EIGHT_PI = 8 * PI;
 /** W of a member (8 pi for the double cover), or null when none was found. */
-const memberW = (m) => (m.member ? m.member.W : m.doubleCover ? EIGHT_PI : null);
+const memberW = (m) => (!m ? null : m.member ? m.member.W : m.doubleCover ? EIGHT_PI : null);
 /** The members with the least W (a tie is possible: then the minimizer is not unique). */
 function leastMembers(R) {
   const ws = R.members.map(memberW), lo = Math.min(...ws.filter((w) => w !== null));
+  if (!R.members.every(Boolean)) return ws.map(() => false);
   return ws.map((w) => w !== null && w <= lo * (1 + 1e-6));
 }
 function memberLine(m) {
@@ -591,14 +592,15 @@ function famLabels() {
   [0, 1, 2].forEach((p) => {
     const m = R && R.members[p];
     const following = m && fam.follow === p && cand.tau && sameTau(cand.tau, m.tau);
-    $(`famLabel${p + 1}`).textContent = !R ? (fam.busy ? 'Computing the family…' : 'No conformal class chosen') : `h = ${m.half}: internal τ = ${cfmt(m.tau)}\n${memberLine(m)}${least[p] ? ' · least W' : ''}${following ? ' · its tree is shown' : ''}`;
+    $(`famLabel${p + 1}`).textContent = !m ? (fam.gen ? 'Computing the member…' : 'No conformal class chosen') : `h = ${m.half}: internal τ = ${cfmt(m.tau)}\n${memberLine(m)}${least[p] ? ' · least W' : ''}${following ? ' · its tree is shown' : ''}`;
     $(`fam${p + 1}`).classList.toggle('active', !!following);
   });
+  if (R && R.members.every(Boolean)) $('famList').innerHTML = famListHTML(R);
   $('treeLabel').textContent = cand.sampleNote ? `The tree of internal τ = ${cand.tau ? cfmt(cand.tau) : '?'}: ${cand.sampleNote.split('\n')[0]}` : '';
 }
 function famListHTML(R) {
   const least = leastMembers(R);
-  return R.members.map((m, p) => `<div class="famrow${least[p] ? ' least' : ''}"><span class="what">h = ${m.half}: ${memberLine(m)}</span>` +
+  return R.members.map((m, p) => `<div class="famrow${least[p] ? ' least' : ''}"><span class="sw" style="background:${FAMILY_COLOURS[p]}"></span><span class="what">h = ${m.half}: ${memberLine(m)}</span>` +
     `<button class="tbtn" type="button" data-walk="${p}" title="Compute the tree of the internal lattice Γ̂ + h = ⟨1, ${cfmt(m.tau)}⟩ and put its dot on this member">Its tree</button></div>`).join('');
 }
 function famNote(R) {
@@ -613,36 +615,40 @@ function famNote(R) {
 }
 $('famList').addEventListener('click', (e) => { const b = e.target.closest('[data-walk]'); if (b) walkMember(+b.dataset.walk); });
 
-/** The surface parameters of a member (one cell of its closing lattice, as params() for a candidate). */
-function memberParams(f) {
-  const [e1, e2] = f.lattice, l1 = Math.hypot(...e1), l2 = Math.hypot(...e2), m = Math.max(l1, l2), res = Math.min(state.res, 160);
+/** The surface parameters of a member (one cell of its closing lattice, as params() for a candidate), at resolution res. */
+function memberParams(f, res) {
+  const [e1, e2] = f.lattice, l1 = Math.hypot(...e1), l2 = Math.hypot(...e2), m = Math.max(l1, l2);
   const n1 = Math.max(3, Math.round((res * l1) / m)), n2 = Math.max(3, Math.round((res * l2) / m));
   return { alphas: f.alphas, theta0: 0, tau: [], z0: [0, 0], phi: 0, width: 1, height: 1, nx: n1, ny: n2, hmax: state.hmax,
     gen: { lams: f.syms.map((p) => p.lam), signs: f.syms.map((p) => p.sign), projection: state.gen.proj }, cell: f.lattice,
     sCoords: Array.from({ length: n1 }, (_, i) => (i * l1) / (n1 - 1)), tCoords: Array.from({ length: n2 }, (_, j) => (j * l2) / (n2 - 1)) };
 }
-/** Compute the surfaces of the three members (in their own worker). */
-function famSurfaces() {
-  if (!fam.R || !quartersOn()) return;
+// the resolution of the members' surfaces: low while tau^ is dragged, so that the deformation shows smoothly
+const FAM_RES_DRAG = 48;
+const famRes = () => (fam.dragging ? FAM_RES_DRAG : Math.min(state.res, 160));
+/**
+ * Compute the surface of member p (in the members' surface worker). One job per pane at a time: a request
+ * while one is running is kept and sent when it returns, with the member as it is then (the latest wins).
+ */
+function famSurface(p) {
+  if (!quartersOn() || !fam.R) return;
   if (!fam.surf) {
     fam.surf = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
     fam.surf.onmessage = (e) => {
-      const { id, result } = e.data;
-      if (!result || Math.floor(id / 10) !== fam.sid) return;
-      fam.res[id % 10] = result;
-      famShow(id % 10);
+      const { id, result } = e.data, q = id % 10;
+      fam.surfBusy[q] = false;
+      if (result) { fam.res[q] = result; famShow(q); }
+      if (fam.surfPending[q]) { fam.surfPending[q] = false; famSurface(q); }
     };
   }
-  fam.sid++;
-  fam.res = [null, null, null];
-  fam.framed = [false, false, false];
-  fam.R.members.forEach((m, p) => {
-    const id = fam.sid * 10 + p;
-    if (m.member) fam.surf.postMessage({ id, params: memberParams(m.member) });
-    else if (m.doubleCover) fam.surf.postMessage({ id, kind: 'doubleCover', params: { tauExt: fam.R.tauExt, n: Math.min(state.res, 160) } });
-  });
-  [0, 1, 2].forEach(famShow);
+  if (fam.surfBusy[p]) { fam.surfPending[p] = true; return; }
+  const m = fam.R.members[p], id = ++fam.sid * 10 + p;
+  if (m && m.member) fam.surf.postMessage({ id, params: memberParams(m.member, famRes()) });
+  else if (m && m.doubleCover) fam.surf.postMessage({ id, kind: 'doubleCover', params: { tauExt: fam.R.tauExt, n: famRes() } });
+  else { fam.res[p] = null; famShow(p); return; }
+  fam.surfBusy[p] = true;
 }
+function famSurfaces() { [0, 1, 2].forEach(famSurface); }
 function famShow(p) {
   const v = famViewers[p], r = fam.res[p];
   if (!v) return;
@@ -653,46 +659,86 @@ function famShow(p) {
   const { vals, range } = colourValues(r);
   v.setSurface(r, vals);
   v.setStyle(textureStyle(range));
-  v.setMarkers([]);
+  // the double cover: spikes at its four branch points (the half-periods), as near an open end of the tree
+  if (m && !m.member && m.doubleCover && r.nx > 2 && r.ny > 2) setHalfPeriodMarkers(v, r); else v.setMarkers([]);
   if (!fam.framed[p]) { v.frame(); fam.framed[p] = true; }
 }
 function famRefresh() { if (quartersOn()) [0, 1, 2].forEach(famShow); }
 
-/** Compute the family of the conformal class te (the latest request wins). opts.walk: then walk a member's tree. */
+/**
+ * Compute the family of the conformal class te, one member per worker (the three superlattices in parallel;
+ * each pane is drawn when its member arrives, and the latest request wins in each worker).
+ * opts.fast (while tau^ is dragged): each member is continued from the previous one (familyStepMember) and te
+ * is not reduced to F_1, so that the labels h stay continuous; the surfaces are drawn at low resolution.
+ * Otherwise te is reduced and every member is computed afresh; when all three are in, the panel's list and
+ * note are filled and, unless opts.walk is false, a member's tree is walked. opts.reframe: frame the panes.
+ */
 function requestFamily(te, opts = {}) {
-  fam.pending = { te, opts };
-  if (fam.busy) return;
-  const { te: t, opts: o } = fam.pending;
-  fam.pending = null;
-  if (!fam.worker) {
-    fam.worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-    fam.worker.onerror = (e) => { fam.busy = false; $('famBtn').disabled = false; $('famNote').textContent = `worker error: ${e.message}`; };
-    fam.worker.onmessage = (e) => {
-      const { result: R, error } = e.data, o = fam.inflight || {};
-      fam.busy = false;
-      $('famBtn').disabled = false;
-      if (fam.pending) requestFamily(fam.pending.te, fam.pending.opts);
-      if (error) { $('famNote').textContent = error; return; }
-      fam.R = R;
-      extPad.set({ tau: R.tauExt });
-      $('famList').innerHTML = famListHTML(R);
-      $('famNote').textContent = famNote(R);
-      famLabels();
-      famSurfaces();
-      if (o.walk !== false && !fam.pending) {
-        // follow the same member as before (by its half-period), or the one with the least W
-        const least = leastMembers(R);
-        walkMember(fam.follow ?? Math.max(0, least.indexOf(true)));
-      }
-    };
+  const fast = !!opts.fast && !!fam.R && fam.R.members.every(Boolean);
+  if (!fast) te = reduceTau(te);
+  fam.dragging = !!opts.fast;
+  fam.tau = te;
+  fam.gen++;
+  if (opts.reframe) fam.framed = [false, false, false];
+  if (!fam.lanes) {
+    fam.lanes = [0, 1, 2].map((idx) => {
+      const L = { worker: new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }), busy: false, job: null, pending: null, shown: 0 };
+      L.worker.onerror = (e) => { L.busy = false; $('famNote').textContent = `worker error: ${e.message}`; };
+      L.worker.onmessage = (e) => famArrived(idx, e.data);
+      return L;
+    });
   }
-  fam.busy = true;
-  fam.inflight = o;
-  fam.tau = t;
-  $('famBtn').disabled = true;
-  $('famNote').textContent = `Computing the family of τ̂ = ${cfmt(t)}…`;
+  if (!fast) {
+    fam.full = { gen: fam.gen, got: 0, t0: performance.now(), opts };
+    $('famBtn').disabled = true;
+    $('famNote').textContent = `Computing the family of τ̂ = ${cfmt(te)}…`;
+  } else {
+    fam.full = null;
+    $('famNote').textContent = `τ̂ = ${cfmt(te)}, dragging: each member is continued from the last, drawn at low resolution; the full search runs on release.`;
+  }
+  [0, 1, 2].forEach((idx) => famPost(idx, { gen: fam.gen, te, fast }));
   famLabels();
-  fam.worker.postMessage({ id: ++fam.id, kind: 'family', params: { tauExt: t } });
+}
+/** Send a member's job to its worker, or keep it until the running one returns. */
+function famPost(idx, job) {
+  const L = fam.lanes[idx];
+  if (L.busy) { L.pending = job; return; }
+  L.busy = true;
+  L.job = job;
+  // the member to continue from is the latest one, taken when the job is sent
+  const prev = job.fast && fam.R ? fam.R.members[idx] : null;
+  L.worker.postMessage({ id: job.gen, kind: 'member', params: { tauExt: job.te, idx, prev } });
+}
+function famArrived(idx, { result, error }) {
+  const L = fam.lanes[idx], job = L.job;
+  L.busy = false;
+  if (error) $('famNote').textContent = error;
+  else if (job.gen >= L.shown) {
+    L.shown = job.gen;
+    if (!fam.R) fam.R = { tauExt: job.te, members: [null, null, null] };
+    fam.R.members[idx] = result.member;
+    fam.R.tauExt = job.te;
+    famSurface(idx);
+    famLabels();
+    if (fam.full && job.gen === fam.full.gen && ++fam.full.got === 3) famComplete();
+  }
+  if (L.pending) { const j = L.pending; L.pending = null; famPost(idx, j); }
+}
+/** All three members of a full request are in: the list, the note, the pad, and the tree of a member. */
+function famComplete() {
+  const R = fam.R, o = fam.full.opts;
+  R.ms = performance.now() - fam.full.t0;
+  fam.full = null;
+  $('famBtn').disabled = false;
+  extPad.set({ tau: R.tauExt });
+  $('famList').innerHTML = famListHTML(R);
+  $('famNote').textContent = famNote(R);
+  famLabels();
+  if (o.walk !== false) {
+    // follow the same member as before (by its half-period), or the one with the least W
+    const least = leastMembers(R);
+    walkMember(fam.follow ?? Math.max(0, least.indexOf(true)));
+  }
 }
 /** A line for the tree's note when it was computed for a member of the family (or ''). */
 function memberTreeNote(o) {
@@ -714,14 +760,33 @@ function walkMember(p) {
 }
 const extPad = new TauPad($('extPad'), (t, dragging) => {
   $('extRe').value = fixed(t[0], 4); $('extIm').value = fixed(t[1], 4);
-  requestFamily(t, { walk: !dragging });
+  // while dragging: the members continued at low resolution; on release: the full family, and its tree
+  requestFamily(t, dragging ? { fast: true, walk: false } : {});
 });
 extPad.set({ tau: [0.1855, 1.7195], mode: 'F1' });
 extPad.showAll();
+[1, 2, 3].forEach((k) => { $(`fam${k}`).querySelector('.strip').style.background = FAMILY_COLOURS[k - 1]; });
+// the phases of the family on F_1 (tools/f1map.mjs -> data/f1map.json), if present
+const F1MAP_NOTE = 'Tint: the member with the least W (rust h = ½, blue τ/2, green (1 + τ)/2; grey: all are double covers, the least W is 8π). '
+  + 'Solid line in a member\'s colour: it becomes the double cover (its least W crosses 8π); dashed: its curve changes between genus 1 and genus 2. '
+  + 'Ink: the member with the least W changes (two members have equal W). Dotted: the least W of genus 1 reaches 8π (the white curve of Fig. 1 of the proposal). '
+  + 'Where a member\'s curve is not found (h = ½ above Im τ̂ ≈ 1.5) its lines and tint are missing.';
+let f1map = null;
+const showF1Map = () => {
+  extPad.set({ f1map: $('f1mapOn').checked ? f1map : null });
+  $('f1mapNote').textContent = $('f1mapOn').checked ? `${F1MAP_NOTE} Grid step ${f1map.step}.` : '';
+};
+fetch(new URL('../data/f1map.json', import.meta.url)).then((r) => (r.ok ? r.json() : null)).then((d) => {
+  if (!d) return;
+  f1map = d;
+  $('f1mapRow').hidden = false;
+  showF1Map();
+}, () => {});
+$('f1mapOn').addEventListener('change', showF1Map);
 $('famBtn').addEventListener('click', () => {
   const re = parseNum($('extRe').value), im = parseNum($('extIm').value);
   if (re === null || im === null || im <= 0) { $('famNote').textContent = 'The conformal class needs Im τ̂ > 0.'; return; }
-  requestFamily([re, im]);
+  requestFamily([re, im], { reframe: true });
 });
 for (const id of ['extRe', 'extIm']) $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('famBtn').click(); });
 
@@ -840,6 +905,15 @@ function towardsOpenEnd() {
  */
 function branchMarkers(res) {
   if (!towardsOpenEnd() || res.nx < 3 || res.ny < 3) { viewer.setMarkers([]); return; }
+  setHalfPeriodMarkers(viewer, res);
+}
+/**
+ * Spikes at the four half-periods of a cell sampled uniformly (the grid indices 0 and (n - 1)/2 in each
+ * direction; for a cell starting at a lattice point or centred at one, these are the half-periods), along
+ * the outward direction from the centroid. For the branched double covers of the round sphere they mark the
+ * branch points.
+ */
+function setHalfPeriodMarkers(v, res) {
   const { nx, ny, pos } = res, N = nx * ny;
   const at = (fi, fj) => {
     // bilinear interpolation at the fractional grid index (fi, fj)
@@ -855,7 +929,7 @@ function branchMarkers(res) {
     const p = at(fi, fj), d = p.map((x, e) => x - c[e]), l = Math.hypot(...d) || 1;
     return { p, d: d.map((x) => x / l) };
   });
-  viewer.setMarkers(list, { len: 0.4 * R, rad: 0.012 * R });
+  v.setMarkers(list, { len: 0.4 * R, rad: 0.012 * R });
 }
 /** f(z + e_k) = c_k f(z) on the cell (c_k real at unripe Sym points; 1 when the torus closes). */
 function cellFactors(res) {
@@ -1356,7 +1430,7 @@ function runPendingFamily() {
   fam.follow = c.length === 3 && [0, 1, 2].includes(c[2]) ? c[2] : null;
   $('extRe').value = String(c[0]); $('extIm').value = String(c[1]);
   extPad.set({ tau: [c[0], c[1]], target: null });
-  requestFamily([c[0], c[1]]);
+  requestFamily([c[0], c[1]], { reframe: true });
 }
 if (pendingFamily) runPendingFamily();
 function runPendingCandidate() {
@@ -1369,3 +1443,4 @@ if (pendingCandidate) runPendingCandidate();
 window.cmcStarted = true; // see index.html
 window.cmcWidget = widget; // for scripted checks (headless drags)
 window.cmcTreeView = treeView;
+window.cmcExtPad = extPad;

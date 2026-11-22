@@ -47,7 +47,10 @@
   body.quarters .plabel { display: block; }
   body.quarters #keys { display: none; }
   .pane.active .plabel { color: var(--accent); }
-  .famrow { display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: 6px; margin: 4px 0 0 4px; font-size: 15.5px; line-height: 1.3; }
+  .pane.extra .strip { position: absolute; left: 0; right: 0; top: 0; height: 3px; pointer-events: none; display: none; z-index: 1; }
+  body.quarters .pane.extra .strip { display: block; }
+  .famrow .sw { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .famrow { display: grid; grid-template-columns: 14px 1fr auto; align-items: baseline; column-gap: 6px; margin: 4px 0 0 4px; font-size: 15.5px; line-height: 1.3; }
   .famrow.least .what { color: var(--accent); }
   .famrow .tbtn { font-size: 15px; padding: 1px 6px; }
   #keys {
@@ -223,9 +226,9 @@
 </style>
 </head>
 <body>
-<div class="pane extra" id="fam1" hidden><canvas id="famView1"></canvas><div class="plabel" id="famLabel1"></div></div>
-<div class="pane extra" id="fam2" hidden><canvas id="famView2"></canvas><div class="plabel" id="famLabel2"></div></div>
-<div class="pane extra" id="fam3" hidden><canvas id="famView3"></canvas><div class="plabel" id="famLabel3"></div></div>
+<div class="pane extra" id="fam1" hidden><div class="strip"></div><canvas id="famView1"></canvas><div class="plabel" id="famLabel1"></div></div>
+<div class="pane extra" id="fam2" hidden><div class="strip"></div><canvas id="famView2"></canvas><div class="plabel" id="famLabel2"></div></div>
+<div class="pane extra" id="fam3" hidden><div class="strip"></div><canvas id="famView3"></canvas><div class="plabel" id="famLabel3"></div></div>
 
 <div id="stage" class="pane">
   <canvas id="view"></canvas>
@@ -250,6 +253,8 @@
         <span>i</span>
       </div>
       <canvas id="extPad" aria-label="The conformal class τ̂ in F₁; drag to move it and recompute the family" title="The conformal class τ̂ of the torus C/⟨1, τ̂⟩, in the fundamental domain F₁. Drag to move it (the family is recomputed, a second or two each time; the latest request wins). The wheel zooms, shift-drag pans, double-click shows all of F₁."></canvas>
+      <label class="cb" id="f1mapRow" hidden><input type="checkbox" class="chk" id="f1mapOn" checked><span>Phases of the family</span></label>
+      <p class="note" id="f1mapNote"></p>
       <div class="btnrow"><button class="tbtn" id="famBtn" type="button" title="For each of the three index 2 superlattices Γ̂ + h of Γ̂ = ⟨1, τ̂⟩ (h a half-period of the torus): the constrained Willmore curves over it that close on Γ̂, and the one with the least W">Find the family</button></div>
       <div id="famList"></div>
       <p class="note" id="famNote"></p>

@@ -134,12 +134,13 @@ const nearestSheet = (Q, p) => {
  * pair is within 1e-7 of S^1 on the off side (classifyPair counts a pair within 1e-8 of S^1 as on it, so
  * the off-side distance cannot fall much below that; the bisection before this ran on to a 1e-13
  * bracket, 50 solves, without getting closer) or the bracket is below 1e-13.
+ * tol: the distance from S^1 at which to stop (default 1e-7).
  * Returns { hi, s, evals }: the off-side end and its state.
  */
-function refineArrival(hi, lo, gHi, gLo, s, evalAt) {
+function refineArrival(hi, lo, gHi, gLo, s, evalAt, tol = 1e-7) {
   let side = 0, bisect = false, evals = 0;
   for (let it = 0; it < 60; it++) {
-    if (Math.abs(hi - lo) <= 1e-13 || Math.sqrt(-gHi) < 1e-7) break;
+    if (Math.abs(hi - lo) <= 1e-13 || Math.sqrt(-gHi) < tol) break;
     let m = bisect || !(gLo > gHi) ? (hi + lo) / 2 : (hi * gLo - lo * gHi) / (gLo - gHi);
     const a = Math.min(hi, lo), b = Math.max(hi, lo), margin = 1e-3 * (b - a);
     if (!(m > a + margin && m < b - margin)) m = Math.min(b - margin, Math.max(a + margin, m));
@@ -838,11 +839,32 @@ export function openEndShapes(choices, { shapeGrid = 36 } = {}) {
  * Returns [{ half, tau }].
  */
 export function superlattices([x, y]) {
-  return [
-    { half: '½', tau: reduceTau([2 * x, 2 * y]) },
-    { half: 'τ/2', tau: reduceTau([x / 2, y / 2]) },
-    { half: '(1 + τ)/2', tau: reduceTau([(1 + x) / 2, y / 2]) },
-  ];
+  return [['½', [2 * x, 2 * y]], ['τ/2', [x / 2, y / 2]], ['(1 + τ)/2', [(1 + x) / 2, y / 2]]]
+    .map(([half, raw]) => ({ half, raw, tau: reduceTau(raw) }));
+}
+
+/**
+ * reduceTau with the transformation: { tau, M: [a, b, c, d] } with tau = (a raw + b) / (c raw + d) (in
+ * GL(2, Z): the first step may be raw -> -raw). The lattices <1, tau> and <1, raw> / (c raw + d) agree.
+ */
+export function reduceWithMatrix(raw) {
+  let [x, y] = raw, M = [1, 0, 0, 1];
+  const mul = ([a, b, c, d], [e, f, g, h]) => [a * e + b * g, a * f + b * h, c * e + d * g, c * f + d * h];
+  if (y < 0) { x = -x; y = -y; M = [-1, 0, 0, 1]; }
+  for (let i = 0; i < 100; i++) {
+    const k = Math.round(x);
+    x -= k; M = mul([1, -k, 0, 1], M);
+    const n = x * x + y * y;
+    if (n >= 1 - 1e-12) break;
+    x = -x / n; y = y / n; M = mul([0, -1, 1, 0], M);
+  }
+  return { tau: [x, y], M };
+}
+/** Integer coordinates (m, n) of the vector w of <1, tau> = <1, raw> / (c raw + d) in the basis (1, raw) of <1, raw>. */
+function rawCoords(w, raw, M) {
+  const [, , c, d] = M, s = cmul(w, [c * raw[0] + d, c * raw[1]]);
+  const n = s[1] / raw[1], m = s[0] - n * raw[0];
+  return [Math.round(m), Math.round(n), Math.hypot(m - Math.round(m), n - Math.round(n))];
 }
 
 /**
@@ -876,11 +898,22 @@ export function nodalCurves(tau, { rMin = 1e-4, maxEvents = 4 } = {}) {
     const names = { tau: rest[0] + 1, third: rest[1] + 1 };
     let edge;
     try { edge = genus1Edge(tp, { maxEvents, rMin }); } catch (e) { ends.push({ open: c + 1, events: 0, end: { why: String(e.message || e) } }); continue; }
+    const mk = markedVectors(tp);
     edge.events.forEach((ev, k) => {
       const al = [[-ev.r, 0]], syms = [{ lam: al[0], nu: [0, 0] }, symPoint(al, ev.lamNode)];
+      // for continuation in tau (familyStep): the opened vector v and the node's vector u, in <1, tau>
+      const vecs = { v: reps[c].v.slice(), u: cmul(mk[ev.name], reps[c].v) };
+      // and the pair at the sample of the edge next to the event on the side off S^1 (at the event itself
+      // P and Q nearly coincide, and Newton from there can jump to another solution)
+      // (the off side is the one the pair comes from: larger r for an arrival, smaller r for a departure)
+      const near = edge.samples.filter((sm) => sm.pairs[ev.name] && sm.pairs[ev.name].kind === 'off' && Math.abs(Math.log(sm.r / ev.r)) > 0.03
+        && (ev.onto !== false ? sm.r > ev.r : sm.r < ev.r))
+        .reduce((b, sm) => (!b || Math.abs(Math.log(sm.r / ev.r)) < Math.abs(Math.log(b.r / ev.r)) ? sm : b), null);
+      const offState = near ? { r: near.r, P: near.pts[ev.name].P, Q: near.pts[ev.name].Q } : null;
       const first = c === order[0];
       const onTree = first && k === 0 ? { label: 'candidate 1', view: 0 } : first && k === 1 && !edge.events[0].double ? { label: 'candidate 1′', view: 0 } : null;
       curves.push({ genus: 1, open: c + 1, node: names[ev.name], onto: ev.onto !== false, k, double: !!ev.double, onTree, alphas: al, syms, r: ev.r, t: ev.t,
+        vecs, offState,
         ...candidate(al, torusBasis(ev.t, tp), syms) });
     });
     ends.push({ open: c + 1, events: edge.events.length, end: edge.end });
@@ -901,36 +934,154 @@ const DOUBLE_NAMES = { 'a1,a2': 'candidate 1 (α + node a)', 'a1,node': 'candida
  * The member is the one with the least W, if that is at most 8 pi; if all have W > 8 pi it is the branched
  * double cover of the round sphere (W = 8 pi, the limit at the open ends, F12); if none was found, null.
  * Returns { tauExt, members: [{ half, tau, found: [...] (sorted by W), member, doubleCover, ends, open }] }
+ * opts: as nodalCurves, and reduce (default true: tauExt is first reduced to F_1).
  * with each found curve { genus, how, W, alphas, syms: [{ lam, sign }], lattice, tauExt, onTree }.
  */
 export function familyOf(tauExt, opts = {}) {
-  const te = reduceTau(tauExt);
-  const members = superlattices(te).map(({ half, tau }) => {
+  // opts.reduce === false: keep tauExt as given (the labels h of the members then vary continuously
+  // with tauExt across the boundary of F_1, as for the map of tools/f1map.mjs)
+  const te = opts.reduce === false ? tauExt.slice() : reduceTau(tauExt);
+  return { tauExt: te, members: [0, 1, 2].map((idx) => familyMember(te, idx, opts)) };
+}
+
+/** The member of the family of te (as given, not reduced) over the superlattice idx (0, 1, 2 for h = 1/2, tau/2, (1 + tau)/2); see familyOf. */
+export function familyMember(te, idx, opts = {}) {
+  {
+    const { half, raw, tau } = superlattices(te)[idx];
     const found = [];
     const N = nodalCurves(tau, opts);
+    const { M } = reduceWithMatrix(raw);
     for (const cv of N.curves) {
       if (!sameClass(cv.tauExt, te)) continue;
       // at a tie of two classes (|tau| = 1) opening either finds the same curve
       if (found.some((f) => Math.abs(f.W - cv.W) < 1e-6 * cv.W)) continue;
       const tag = cv.onTree ? ` (${cv.onTree.label} of the tree)` : '';
+      const [mv, nv, ev] = rawCoords(cv.vecs.v, raw, M), [mu, nu, eu] = rawCoords(cv.vecs.u, raw, M);
+      const cont = ev < 1e-6 && eu < 1e-6 && Math.abs(mv * nu - mu * nv) === 1 && cv.offState ? { idx, mv, nv, mu, nu, r: cv.r, off: cv.offState, tpc: cdivc(cv.vecs.u, cv.vecs.v) } : null;
       found.push({ genus: 1, how: `genus 1: class ${cv.open} opened, the pair of class ${cv.node} ${cv.onto ? 'arrives at' : 'leaves'} S¹${tag}`,
-        W: cv.W, alphas: cv.alphas, syms: cv.syms.map((p) => symOf(cv.alphas, p)), lattice: cv.lattice, tauExt: cv.tauExt, onTree: cv.onTree, r: cv.r });
+        W: cv.W, alphas: cv.alphas, syms: cv.syms.map((p) => symOf(cv.alphas, p)), lattice: cv.lattice, tauExt: cv.tauExt, onTree: cv.onTree, r: cv.r, cont });
     }
-    let C2 = null;
-    try { C2 = candidate2(tau, { fast: true }); } catch { /* no tree */ }
-    if (C2 && C2.choices && !C2.openEnd) {
-      C2.choices.forEach((ch, v) => {
-        if (!sameClass(ch.tauExt, te)) return;
-        const key = ch.pair.join(), g = C2.double ? 1 : 2;
-        if (found.some((f) => f.genus === g && Math.abs(f.W - ch.W) < 1e-6 * ch.W)) return; // the same curve
-        found.push({ genus: g, how: C2.double ? `genus 1, double arrival: ${DOUBLE_NAMES[key]}` : `genus 2: ${G2_NAMES[key]}`,
-          W: ch.W, alphas: C2.alphas, syms: ch.syms.map((p) => symOf(C2.alphas, p)), lattice: ch.lattice, tauExt: ch.tauExt,
-          onTree: { label: C2.double ? 'candidates 1, 2, 3' : 'candidates 2, 3', view: v } });
-      });
+    const C2 = treeChoices(tau, te, found);
+    return pickMember({ half, raw, tau, found, ends: N.ends, open: !!(C2 && C2.openEnd) });
+  }
+}
+
+/** The choices of the tree of tau (candidate2) that close on te, added to found (marked cont: { g2: true }). */
+function treeChoices(tau, te, found) {
+  let C2 = null;
+  try { C2 = candidate2(tau, { fast: true, genus1: { maxEvents: 1 } }); } catch { /* no tree */ }
+  if (C2 && C2.choices && !C2.openEnd) {
+    C2.choices.forEach((ch, v) => {
+      if (!sameClass(ch.tauExt, te)) return;
+      const key = ch.pair.join(), g = C2.double ? 1 : 2;
+      if (found.some((f) => f.genus === g && Math.abs(f.W - ch.W) < 1e-6 * ch.W)) return; // the same curve
+      found.push({ genus: g, how: C2.double ? `genus 1, double arrival: ${DOUBLE_NAMES[key]}` : `genus 2: ${G2_NAMES[key]}`,
+        W: ch.W, alphas: C2.alphas, syms: ch.syms.map((p) => symOf(C2.alphas, p)), lattice: ch.lattice, tauExt: ch.tauExt,
+        onTree: { label: C2.double ? 'candidates 1, 2, 3' : 'candidates 2, 3', view: v }, cont: { g2: true } });
+    });
+  }
+  return C2;
+}
+
+/** Sort the curves found over a superlattice by W and choose the member (least W if at most 8 pi, else the double cover). */
+function pickMember(m) {
+  m.found.sort((a, b) => a.W - b.W);
+  const best = m.found.length && m.found[0].W <= EIGHT_PI ? m.found[0] : null;
+  return { ...m, member: best, doubleCover: !!m.found.length && !best };
+}
+
+/**
+ * A nodal curve continued to a nearby internal lattice: c = { r, off: { r, P, Q } } from the previous lattice
+ * (the parameter of the event, and the pair at a nearby parameter on the side off S^1), tpc the node's vector
+ * over the opened one in the new lattice. Solves the pair at off.r, steps towards the old event and beyond
+ * (or back, if the event has moved past off.r) until the pair is no longer off S^1, and refines the passage
+ * through the sigma-node (refineArrival, to 1e-5 of S^1: enough for drawing while dragging).
+ * Returns { r, t, lamNode, off } (off: the new off-side state) or null.
+ */
+export function continueNodal(c, tpc) {
+  const solve = (r, st, tp = tpc) => { const R = pairAt(tp, 'tau', r, st); return R.ok ? R : null; };
+  const isOff = (R) => R.cls.kind === 'off';
+  // the pair at off.r, carried from the old lattice to the new one in small steps
+  let st0 = { P: c.off.P, Q: c.off.Q }, R0 = null;
+  const n = Math.max(1, Math.ceil(Math.hypot(tpc[0] - c.tpc[0], tpc[1] - c.tpc[1]) / 0.002));
+  for (let k = 1; k <= n; k++) {
+    const tp = [c.tpc[0] + (k / n) * (tpc[0] - c.tpc[0]), c.tpc[1] + (k / n) * (tpc[1] - c.tpc[1])];
+    R0 = solve(c.off.r, st0, tp);
+    if (!R0 || Math.max(dist(R0.P.lam, st0.P.lam), dist(R0.Q.lam, st0.Q.lam)) > 0.3 * Math.max(0.05, Math.hypot(...st0.P.lam))) return null;
+    st0 = { P: R0.P, Q: R0.Q };
+  }
+  let off = { r: c.off.r, R: R0 }, other = null;
+  const gap = c.r - c.off.r;
+  if (isOff(off.R)) {
+    // towards the event and beyond
+    let st = { P: off.R.P, Q: off.R.Q };
+    for (const k of [0.5, 1, 1.5, 2.5, 4, 7]) {
+      const r1 = c.off.r + k * gap;
+      if (!(r1 > 0 && r1 < 1)) break;
+      const R1 = solve(r1, st);
+      if (!R1) return null;
+      if (!isOff(R1)) { other = { r: r1, R: R1 }; break; }
+      off = { r: r1, R: R1 };
+      st = { P: R1.P, Q: R1.Q };
     }
-    found.sort((a, b) => a.W - b.W);
-    const best = found.length && found[0].W <= EIGHT_PI ? found[0] : null;
-    return { half, tau, found, member: best, doubleCover: !!found.length && !best, ends: N.ends, open: !!(C2 && C2.openEnd) };
-  });
-  return { tauExt: te, members };
+  } else {
+    // the event has moved past off.r: back away from it
+    other = off;
+    off = null;
+    let st = { P: other.R.P, Q: other.R.Q };
+    for (const k of [0.5, 1, 2, 4, 8]) {
+      const r1 = c.off.r - k * gap;
+      if (!(r1 > 0 && r1 < 1)) break;
+      const R1 = solve(r1, st);
+      if (!R1) return null;
+      if (isOff(R1)) { off = { r: r1, R: R1 }; break; }
+      other = { r: r1, R: R1 };
+      st = { P: R1.P, Q: R1.Q };
+    }
+  }
+  if (!off || !other) return null;
+  const ref = refineArrival(off.r, other.r, gOf(off.R.cls), gOf(other.R.cls), { P: off.R.P, Q: off.R.Q }, (m, st) => {
+    const Rm = solve(m, st);
+    return { ok: !!Rm, off: !!Rm && isOff(Rm), dist: Rm ? Rm.cls.dist : 0, s: Rm ? { P: Rm.P, Q: Rm.Q } : st };
+  }, 1e-5);
+  const R = solve(ref.hi, ref.s);
+  if (!R || dist(R.P.lam, R.Q.lam) > 1e-2) return null;
+  const mid = [(R.P.lam[0] + R.Q.lam[0]) / 2, (R.P.lam[1] + R.Q.lam[1]) / 2], l = Math.hypot(...mid);
+  // the next off-side state: about 8% from the event in r, on the side of off (solved from off)
+  const side = Math.sign(off.r - ref.hi) || -Math.sign(gap), rO = ref.hi * (1 + 0.08 * side);
+  const RO = rO > 0 && rO < 1 ? solve(rO, { P: off.R.P, Q: off.R.Q }) : null;
+  const next = RO && isOff(RO) ? { r: rO, P: RO.P, Q: RO.Q } : { r: off.r, P: off.R.P, Q: off.R.Q };
+  return { r: ref.hi, t: R.t, lamNode: [mid[0] / l, mid[1] / l], off: next };
+}
+
+/**
+ * The member over the superlattice idx at a class te near that of the member m (a result of familyMember or
+ * of this function), for dragging: every genus 1 curve of m is continued (continueNodal) instead of following
+ * the edges from the opening, and the tree's choices are recomputed only if m had one. If a genus 1 curve
+ * cannot be continued, the member is computed afresh (familyMember), so that it does not jump. te is used as
+ * given (not reduced), so that the labels h stay continuous. Same result format as familyMember, with step:
+ * true when the continuation was used.
+ */
+export function familyStepMember(m, te, idx) {
+  const { half, raw, tau } = superlattices(te)[idx], found = [];
+  for (const f of m.found) {
+    const c = f.cont;
+    if (c && c.g2) continue;
+    if (!c) return familyMember(te, idx);
+    const v = [c.mv + c.nv * raw[0], c.nv * raw[1]], u = [c.mu + c.nu * raw[0], c.nu * raw[1]], tpc = cdivc(u, v);
+    let k;
+    try { k = continueNodal(c, tpc); } catch { k = null; }
+    if (!k) return familyMember(te, idx);
+    const al = [[-k.r, 0]], syms = [{ lam: al[0], nu: [0, 0] }, symPoint(al, k.lamNode)];
+    const C = candidate(al, torusBasis(k.t, tpc), syms);
+    if (!sameClass(C.tauExt, te)) return familyMember(te, idx);
+    found.push({ ...f, W: C.W, alphas: al, syms: syms.map((p) => symOf(al, p)), lattice: C.lattice, tauExt: C.tauExt, r: k.r, cont: { ...c, r: k.r, off: k.off, tpc } });
+  }
+  const C2 = m.found.some((f) => f.cont && f.cont.g2) ? treeChoices(tau, te, found) : null;
+  return { ...pickMember({ half, raw, tau, found, ends: m.ends, open: !!(C2 && C2.openEnd) }), step: true };
+}
+
+/** familyStepMember for all three members of F (a result of familyOf). */
+export function familyStep(F, te) {
+  return { tauExt: te, members: F.members.map((m, idx) => familyStepMember(m, te, idx)), step: true };
 }

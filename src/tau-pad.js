@@ -12,7 +12,8 @@
 // flow has been and small crosses where it stopped. Double-click shows all of F_6.
 //
 // Mode 'F1' alone (the conformal class of a torus, for the candidate family): only F_1 is drawn, and the
-// window starts on it.
+// window starts on it. With f1map (data/f1map.json, tools/f1map.mjs) the phases of the family are drawn
+// over it (_drawF1Map).
 //
 // Genus 2 (g2: true): the domain is F_3 = { |x| <= 1, |τ| >= 1 }, drawn alone, with its three copies of F_1
 // (cut by the lines x = ±1/2 and the arcs |τ ∓ 1| = 1), and the view starts on all of it. curves: the
@@ -43,6 +44,7 @@ export class TauPad {
     this.g2 = false;       // genus 2: draw F_3 alone
     this.curves = null;    // genus 2: { nodal: [pts, ...], open: [pts, ...] }, the boundary of S^2
     this.map = null;       // F_6 map (data/f6map.json) and what to show: { data, mode: 'regions' | 'W1' | 'W2' | 'W1b' }
+    this.f1map = null;     // F_1 map of the candidate family (data/f1map.json), in mode 'F1'
     this._bind();
     new ResizeObserver(() => this.draw()).observe(canvas);
     if (document.fonts) document.fonts.load("14px 'EB Garamond'", 'τ0123').then(() => this.draw(), () => {});
@@ -190,6 +192,79 @@ export class TauPad {
     ctx.stroke();
   }
 
+  /**
+   * The phases of the candidate family on F_1 (data/f1map.json: for each grid point of Re tau^ >= 0 and each
+   * member h, the least W of genus 1 (W1) and of genus 2 (W2) over its superlattice, in units of pi^2;
+   * mirrored to Re tau^ < 0, which keeps the labels). A member's W is min(W1, W2) if at most 8 pi, else 8 pi
+   * (the double cover). Drawn: a tint of the member with the least W (grey where it is 8 pi), and lines by
+   * marching squares: where a member becomes the double cover (solid, in its colour), where its curve changes
+   * between genus 1 and genus 2 (dashed), where the member with the least W changes (ink), and where the
+   * least W of genus 1 reaches 8 pi (dotted ink: the white curve of Fig. 1 of the proposal).
+   */
+  _drawF1Map(ctx, P) {
+    const F = this._f1fields();
+    const { xs, ys, arg } = F;
+    // each grid point's tint reaches halfway to its neighbours (the grid has no column at Re tau^ = 0)
+    const mid = (v, k) => (k <= 0 ? v[0] - (v[1] - v[0]) / 2 : k >= v.length ? v[v.length - 1] + (v[v.length - 1] - v[v.length - 2]) / 2 : (v[k - 1] + v[k]) / 2);
+    for (let j = 0; j < ys.length; j++) for (let i = 0; i < xs.length; i++) {
+      const a = arg[j][i];
+      if (a === null) continue;
+      const [x0, y0] = P([mid(xs, i), mid(ys, j + 1)]).map(Math.round), [x1, y1] = P([mid(xs, i + 1), mid(ys, j)]).map(Math.round);
+      ctx.fillStyle = a === 3 ? 'rgba(106, 98, 87, 0.22)' : FAMILY_TINTS[a];
+      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    }
+    const line = (field, colour, width, dash) => {
+      ctx.strokeStyle = colour; ctx.lineWidth = width; ctx.setLineDash(dash);
+      ctx.beginPath();
+      for (const [p, q] of contour(xs, ys, field)) { ctx.moveTo(...P(p)); ctx.lineTo(...P(q)); }
+      ctx.stroke();
+    };
+    for (let m = 0; m < 3; m++) {
+      line(F.toDouble[m], FAMILY_COLOURS[m], 1.5, []);
+      line(F.genusSwitch[m], FAMILY_COLOURS[m], 1.5, [5, 3]);
+    }
+    for (const fld of F.minSwitch) line(fld, '#27231E', 1.2, []);
+    line(F.fig1, '#27231E', 1.2, [1.5, 2.5]);
+    ctx.setLineDash([]);
+  }
+
+  /** The fields of _drawF1Map from the grid (cached per data object). */
+  _f1fields() {
+    const d = this.f1map;
+    if (this._f1 && this._f1.data === d) return this._f1;
+    const E8 = 8 / Math.PI; // 8 pi in units of pi^2
+    // mirrored to Re tau^ < 0, without the column Re tau^ = 0: there (rectangular classes) the superlattice
+    // (1 + tau^)/2 lies exactly on a wall of F_6 (a double arrival), which the neighbouring columns do not see
+    const cols = d.xs.slice(1), n = cols.length, xs = [...cols.map((x) => -x).reverse(), ...cols], ys = d.ys;
+    const at = (j, i) => { const g = d.grid[j][i < n ? n - i : i - n + 1]; return g && g.members ? g.members : null; };
+    const make = (fn) => ys.map((_, j) => xs.map((__, i) => { const ms = at(j, i); if (!ms) return null; const v = fn(ms); return Number.isFinite(v) ? v : null; }));
+    const least = (m) => { const w = [m.W1, m.W2].filter((x) => x !== null && x !== undefined); return w.length ? Math.min(...w) : null; };
+    // the member's W (8 pi for the double cover), null if nothing was found
+    const effOf = (m) => { const w = least(m); return w === null ? null : Math.min(w, E8); };
+    const eff = [0, 1, 2].map((k) => make((ms) => effOf(ms[k])));
+    const arg = ys.map((_, j) => xs.map((__, i) => {
+      const w = [0, 1, 2].map((k) => eff[k][j][i]);
+      if (w.every((x) => x === null)) return null;
+      const lo = Math.min(...w.filter((x) => x !== null));
+      return lo >= E8 - 1e-9 ? 3 : w.indexOf(lo);
+    }));
+    const toDouble = [0, 1, 2].map((k) => make((ms) => { const w = least(ms[k]); return w === null ? NaN : w - E8; }));
+    const genusSwitch = [0, 1, 2].map((k) => make((ms) => {
+      const { W1, W2 } = ms[k];
+      return W1 !== null && W2 !== null && Math.min(W1, W2) < E8 ? W1 - W2 : NaN;
+    }));
+    // the boundaries between the regions of the least member: W_a - W_b where a or b is the least, and below 8 pi
+    const minSwitch = [[0, 1], [0, 2], [1, 2]].map(([a, b]) => ys.map((_, j) => xs.map((__, i) => {
+      const wa = eff[a][j][i], wb = eff[b][j][i];
+      if (wa === null || wb === null || Math.max(wa, wb) >= E8 - 1e-9) return null;
+      const c = eff[3 - a - b][j][i];
+      return c !== null && c < Math.min(wa, wb) ? null : wa - wb;
+    })));
+    const fig1 = make((ms) => { const w = ms.map((m) => m.W1).filter((x) => x !== null); return w.length ? Math.min(...w) - E8 : NaN; });
+    this._f1 = { data: d, xs, ys, eff, arg, toDouble, genusSwitch, minSwitch, fig1 };
+    return this._f1;
+  }
+
   draw() {
     const c = this.canvas, ctx = this.ctx;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -269,6 +344,15 @@ export class TauPad {
       ctx.moveTo(...P([-1, 0])); arc(0, 1, PI, 2 * PI);
       ctx.stroke();
     } else if (this.mode === 'F1') {
+      if (this.f1map) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(...P([-0.5, r3])); arc(0, 1, (4 * PI) / 3, (5 * PI) / 3);
+        ctx.lineTo(P([0.5, 0])[0], yHi); ctx.lineTo(P([-0.5, 0])[0], yHi); ctx.closePath();
+        ctx.clip();
+        this._drawF1Map(ctx, P);
+        ctx.restore();
+      }
       // the boundary of F_1
       ctx.strokeStyle = C.ink;
       ctx.lineWidth = 1.1;
@@ -379,6 +463,33 @@ export class TauPad {
     ctx.beginPath(); ctx.arc(px, py, this.drag ? 6 : 5, 0, 2 * Math.PI); ctx.fill();
     ctx.restore();
   }
+}
+
+/** The colours of the members h = 1/2, tau/2, (1 + tau)/2 of the candidate family (as in the panes), and their tints. */
+export const FAMILY_COLOURS = ['#9E3F24', '#3D5A80', '#4F7A3A'];
+const FAMILY_TINTS = ['rgba(158, 63, 36, 0.16)', 'rgba(61, 90, 128, 0.16)', 'rgba(79, 122, 58, 0.18)'];
+
+/**
+ * Marching squares: the segments of the zero set of field (rows over ys, columns over xs; null where
+ * undefined, and cells with an undefined corner are skipped), linear along the cell edges.
+ */
+function contour(xs, ys, field) {
+  const out = [];
+  for (let j = 0; j + 1 < ys.length; j++) for (let i = 0; i + 1 < xs.length; i++) {
+    const c = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]].map(([a, b]) => ({ p: [xs[a], ys[b]], v: field[b][a] }));
+    if (c.some((q) => q.v === null)) continue;
+    const pts = [];
+    for (let k = 0; k < 4; k++) {
+      const A = c[k], B = c[(k + 1) % 4];
+      if ((A.v < 0) !== (B.v < 0)) {
+        const t = A.v / (A.v - B.v);
+        pts.push([A.p[0] + t * (B.p[0] - A.p[0]), A.p[1] + t * (B.p[1] - A.p[1])]);
+      }
+    }
+    if (pts.length === 2) out.push([pts[0], pts[1]]);
+    else if (pts.length === 4) { out.push([pts[0], pts[1]]); out.push([pts[2], pts[3]]); }
+  }
+  return out;
 }
 
 /** viridis, polynomial fit (as in the viewer's shader), t in [0, 1] -> [r, g, b] in 0..255 */

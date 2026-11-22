@@ -53,7 +53,8 @@ State on 22 November 2026. The mathematics (Ross's sketch, findings F1–F16, op
    6. `paritySublattice`.
    7. `locateOnTree`: the τ and t of a genus 2 curve.
    8. `openEndShapes`.
-   9. The candidate family (F17): `superlattices`, `sameClass`, `nodalCurves` (the genus 1 curves with one σ-node over an internal τ, opening each class in turn), `familyOf`.
+   9. The candidate family (F17): `superlattices`, `sameClass`, `nodalCurves` (the genus 1 curves with one σ-node over an internal τ, opening each class in turn), `familyOf` and `familyMember` (one superlattice).
+   10. Dragging τ̂: `familyStepMember` continues each genus 1 curve of a member (`continueNodal`: the pair carried to the new lattice at a fixed r about 8% from the event, then the event bracketed and refined to 1e-5), recomputes the tree's choices if the member had one, and falls back to `familyMember` when a curve cannot be continued. The curves are identified across steps by integer coordinates of their two lattice vectors in the unreduced superlattice basis (`reduceWithMatrix`).
 4. Spectral-curve modules:
    1. `src/cmc/periods.js`: periods of the real-normalized differentials Θ_w.
    2. `src/cmc/whitham.js`: `ellVector`, the genus 2 period vectors. `WhithamCurve` is only used by tests.
@@ -70,7 +71,7 @@ State on 22 November 2026. The mathematics (Ross's sketch, findings F1–F16, op
    4. `src/spectral-widget.js`: the λ-plane.
    5. `src/tau-pad.js`: the F_6 pad, and in mode `F1` the pad of the conformal class.
    6. `src/viewer.js`: three.js, including `setMarkers` for the spikes.
-7. Precomputed data: `tools/f6map.mjs` writes `data/f6map.json`. On a grid of step 0.05 over F_6 (Im τ ≤ 2.4) it records the kind of tree (candidates, open end, double arrival, none) and W of candidates 1, 2 and 1′, and the boundary between candidates and open end (bisected along the grid edges, joined by marching squares). About 22 minutes; rerun after changes to the tree code.
+7. Precomputed data: `tools/f1map.mjs` writes `data/f1map.json`: on a grid of step 0.025 of τ̂ (Re ≥ 0, Im 0.8 to 2.3, a little outside F_1 for the contours), for each member the least W of genus 1 and of genus 2 (familyOf without reduction, so that the labels h are continuous). About 25 minutes on 15 processes. `tools/f6map.mjs` writes `data/f6map.json`. On a grid of step 0.05 over F_6 (Im τ ≤ 2.4) it records the kind of tree (candidates, open end, double arrival, none) and W of candidates 1, 2 and 1′, and the boundary between candidates and open end (bisected along the grid edges, joined by marching squares). About 22 minutes; rerun after changes to the tree code.
 
 ## 4. How the tree is computed (`candidate2(τ)`)
 
@@ -128,6 +129,9 @@ State on 22 November 2026. The mathematics (Ross's sketch, findings F1–F16, op
    3. *Its tree* computes the tree of the member's internal τ (`candidate2`) and puts the dot on the member when it is a node of that tree (candidate 1, 1′, or a choice at candidates 2, 3); the note under the tree says which.
    4. After each family, the tree of the same member as before (by h), or of the one with the least W, is walked.
    5. The family note lists every curve found over each superlattice, with W, and the genus 1 edges that ended without a nodal curve.
+   6. The members are computed in three workers, one per superlattice, and each pane is drawn when its member arrives. While τ̂ is dragged the members are continued (`familyStepMember`, τ̂ not reduced) and drawn at resolution 48; on release the full family runs and the tree follows.
+   7. The phases on the pad (`data/f1map.json`): tint of the member with the least W (grey: 8π); solid lines in a member's colour where it becomes the double cover, dashed where it changes genus; ink lines where the member with the least W changes; dotted where the least W of genus 1 reaches 8π (Fig. 1's white curve). The members' colours (rust, blue, green) are also on the panes and in the list.
+   8. A double cover has spikes at its four branch points.
 3. **Tree section** (formerly Candidates).
    1. Internal τ: fields and the F_6 pad. Dragging recomputes, and the latest request wins. Under the pad, the map of F_6 (if `data/f6map.json` is present): where candidates 2 and 3 exist (blue shading: open end; blue line: the boundary), or W of candidate 1, 2 or 1′.
    2. Buttons: Find candidates 2, 3, and Find candidate 1.
@@ -192,7 +196,7 @@ State on 22 November 2026. The mathematics (Ross's sketch, findings F1–F16, op
 ## 7. Next steps
 
 1. **The family** (F17, open question 9 of `cw_candidates.md`):
-   1. a map of F_1 like Fig. 1 of the proposal: W of the three members, and which kind each is (genus 1, genus 2, double cover); precomputed like `data/f6map.json` (2–5 s per point);
+   1. the map of F_1 (`data/f1map.json`): refine it, extend it above Im τ̂ = 2.3, and compare it with Fig. 1 and the genus 2 paper;
    2. the third nodal curve over superlattices with Im τ̃ above about 3;
    3. genus 2 curves on the trees of the other sheets (not only the one opening the shortest class);
    4. check the selection rule (least W over each superlattice) for continuity.

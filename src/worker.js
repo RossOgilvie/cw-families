@@ -3,6 +3,8 @@
 //              { id, kind: 'candidate2', params: { tau, fast } } (candidates 1-3 and the tree),
 //              { id, kind: 'shapes', params: { choices } } (the open-end shape diagnostics),
 //              { id, kind: 'family', params: { tauExt } } (the candidate family of a conformal class),
+//              { id, kind: 'member', params: { tauExt, idx, prev } } (one member of it, continued from prev
+//              while dragging),
 //              { id, kind: 'doubleCover', params: { tauExt, n } } (its branched double cover of the sphere),
 //              { id, params }   (params as for computeSurface; with params.gen = { lams, signs, projection }
 //              the generalized Sym surface of gensym.js), { id, kind: 'close', params },
@@ -10,7 +12,7 @@
 
 import { computeSurface, closingInfo } from './cmc/cmc.js';
 import { computeGenSurface, doubleCoverSurface } from './cmc/gensym.js';
-import { candidate1, candidate2, treeOf, openEndShapes, familyOf } from './cmc/tree.js';
+import { candidate1, candidate2, treeOf, openEndShapes, familyOf, familyMember, familyStepMember } from './cmc/tree.js';
 
 /** The branch at candidate 1 that does not open the node (candidate 1'), for the note. */
 const branchInfo = (b) => (b && b.event ? { name: b.event.name, cls: b.event.cls, leaving: b.event.leaving, r: b.event.r, W: b.W, tauExt: b.tauExt, closing: b.defects.closing } : null);
@@ -81,6 +83,16 @@ self.onmessage = (e) => {
       const members = F.members.map((m) => ({ half: m.half, tau: m.tau, found: m.found.map(slim), member: slim(m.member), doubleCover: m.doubleCover, open: m.open,
         ends: m.ends.map((e) => ({ open: e.open, events: e.events, why: e.end.why, r: e.end.r })) }));
       self.postMessage({ id, result: { tauExt: F.tauExt, members, ms: performance.now() - t0 } });
+    } catch (err) {
+      self.postMessage({ id, error: String(err && err.message ? err.message : err) });
+    }
+    return;
+  }
+  if (kind === 'member') {
+    try {
+      const t0 = performance.now(), { tauExt, idx, prev } = params;
+      const m = prev ? familyStepMember(prev, tauExt, idx) : familyMember(tauExt, idx);
+      self.postMessage({ id, result: { tauExt, idx, member: m, ms: performance.now() - t0 } });
     } catch (err) {
       self.postMessage({ id, error: String(err && err.message ? err.message : err) });
     }
