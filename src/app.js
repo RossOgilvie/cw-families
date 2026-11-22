@@ -8,6 +8,8 @@ import { commonRootsOnCircle } from './cmc/periods.js';
 import { TauPad } from './tau-pad.js';
 import { TreeView } from './tree-view.js';
 import { locateOnTree, paritySublattice, dualBasis } from './cmc/tree.js';
+
+const sameTau = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9;
 import { ellVector } from './cmc/whitham.js';
 
 const $ = (id) => document.getElementById(id);
@@ -72,12 +74,18 @@ const VIEW_DEFAULTS = {
   // a parallelogram cell [e1, e2] of the closing lattice of a candidate (drawn instead of the domain)
   cell: null,
 };
-// Presets: the Clifford torus (genus 0, Sym points ±i) as a state, and candidates by their internal tau (k).
+// Presets: candidate families by their conformal class (c), the Clifford torus (genus 0, Sym points ±i) as
+// a state, and trees by their internal tau (k).
+const DEFAULT_CLASS = [0.45, 1.2];
 const PRESETS = [
+  { name: 'Family: three tori of genus 1 (τ̂ = 0.45 + 1.2i)', c: DEFAULT_CLASS },
+  { name: 'Family with a member of genus 2 (τ̂ = 0.1855 + 1.7195i)', c: [0.1855, 1.7195] },
+  { name: 'Family near the Clifford torus (τ̂ = 0.02 + 1.02i)', c: [0.02, 1.02] },
+  { name: 'Family of a rectangular class (τ̂ = 1.5i): the homogeneous torus', c: [0, 1.5] },
   { name: 'Clifford torus (genus 0, Sym points ±i)', s: { alphas: [], theta0: 0, width: PI * Math.SQRT2, height: PI * Math.SQRT2, gridStep: PI * Math.SQRT2 / 24, gen: { on: true, lams: [[0, 1], [0, -1]], signs: [1, 1], proj: 'auto' } } },
-  { name: 'Candidates 2 and 3: internal τ = 0.45 + 0.95i', k: [0.45, 0.95, 2] },
-  { name: 'Double arrival on Re τ = ½: internal τ = 0.5 + 0.9i', k: [0.5, 0.9, 2] },
-  { name: 'Open end: internal τ = 0.2 + 1.3i', k: [0.2, 1.3, 2] },
+  { name: 'Tree: candidates 2 and 3 at internal τ = 0.45 + 0.95i', k: [0.45, 0.95, 2] },
+  { name: 'Tree: double arrival on Re τ = ½, internal τ = 0.5 + 0.9i', k: [0.5, 0.9, 2] },
+  { name: 'Tree: open end at internal τ = 0.2 + 1.3i', k: [0.2, 1.3, 2] },
 ];
 
 const state = {
@@ -97,13 +105,15 @@ function syncTau() {
 // ------------------------------------------------------------------ links
 
 let pendingCandidate = null; // internal tau from a link #k=re,im (candidate 1) or #k=re,im,2 (candidate 2), computed on start
+let pendingFamily = null; // a conformal class from a link #c=re,im (the candidate family), computed on start
 // The state goes into the URL only through "Copy link". A page opened from such a link (or with one
 // pasted into its address bar) takes the state from the hash and then clears it from the address bar.
 
 const fmt = (x, d = 4) => String(+x.toFixed(d));
 function linkURL() {
   const p = new URLSearchParams();
-  // a candidate is recomputed from its internal tau
+  // the candidate family is recomputed from its conformal class, a candidate from its internal tau
+  if (fam.R && fam.follow !== null && cand.tau && sameTau(cand.tau, fam.R.members[fam.follow].tau)) return `${location.origin}${location.pathname}${location.search}#c=${fam.R.tauExt.map((x) => fmt(x, 10)).join(',')},${fam.follow}`;
   if (state.cell && cand.tau) return `${location.origin}${location.pathname}${location.search}#k=${cand.tau.map((x) => fmt(x, 10)).join(',')}${cand.which === 2 ? ',2' : ''}`;
   p.set('a', state.alphas.map(([re, im]) => `${fmt(re, 10)},${fmt(im, 10)}`).join(';'));
   p.set('l', fmt(state.theta0, 10));
@@ -133,6 +143,11 @@ function snapLinkLam() {
 }
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
+  if (p.has('c')) {
+    const c = (p.get('c') || '').split(',').map(Number);
+    if ((c.length === 2 || c.length === 3) && c.every(Number.isFinite) && c[1] > 0) pendingFamily = c;
+    return false;
+  }
   if (p.has('k')) {
     const k = (p.get('k') || '').split(',').map(Number);
     if ((k.length === 2 || k.length === 3) && k.every(Number.isFinite) && k[1] > 0) pendingCandidate = k;
@@ -172,10 +187,9 @@ function readHash() {
 
 // ------------------------------------------------------------------ computation scheduling
 
-// the active viewer (the one the tree's dot drives); with three candidates side by side there are three
-let viewer = new Viewer($('view'));
-const viewers = [viewer, null, null];
-const eachViewer = (fn) => viewers.forEach((v) => v && fn(v));
+// the viewer of the tree (the one the tree's dot drives); the members of the candidate family have their own
+const viewer = new Viewer($('view'));
+const eachViewer = (fn) => [viewer, ...famViewers].forEach((v) => v && fn(v));
 let worker = null, busy = false, busyFull = false, pending = null, reqId = 0, shownId = 0;
 let fullTimer = null, needFrame = true, last = null;
 const jobInfo = new Map(); // job id -> what the job computed
@@ -524,130 +538,199 @@ function refreshAlphaValues() {
   });
 }
 
-// ------------------------------------------------------------------ three candidates side by side
+// ------------------------------------------------------------------ the candidate family of a conformal class
 
-// The screen in quarters: candidate 1, 2 and 3 in three panes, the panel in the fourth. Each pane is a
-// branch of the tree: the genus 1 edge (and the branch that does not open the node) for candidate 1, the
-// genus 2 edge with alpha_1 + alpha_2 for candidate 2, and with alpha_1 + the remaining pair for
-// candidate 3. The pane of the branch where the tree's dot is follows the dot (the active pane, drawn by the
-// usual pipeline); the others show their candidate, computed by their own worker.
-const panes = { on: false, active: 0, specs: [null, null, null], res: [null, null, null], framed: [false, false, false], worker: null, id: 0 };
-/** The pane of a sample of the tree and its view index. */
-function paneOf(sm, vi) {
-  if (!sm) return 0;
-  if (sm.edge === 2) return vi === 0 ? 1 : 2;
-  if (sm.views.length > 1 && sm.edge === 1) return vi === 0 ? 0 : 2; // the double arrival
-  return 0;
+// The candidate family (familyOf in tree.js): for the conformal class tau^ of the torus, one member for each
+// of the three index 2 superlattices Gamma^ + h (h a half-period of the torus). Each member is drawn in its
+// own pane, computed by its own worker; the fourth pane is the tree (the usual pipeline, driven by the dot).
+// Walking a member's tree computes the tree of its internal lattice and puts the dot on the member when it
+// is a node of that tree.
+const fam = { tau: null, worker: null, id: 0, busy: false, pending: null, R: null, res: [null, null, null], framed: [false, false, false],
+  follow: null, surf: null, sid: 0 };
+const famViewers = [null, null, null];
+const quartersOn = () => document.body.classList.contains('quarters');
+const cfmt = (x) => `${fixed(x[0], 4)} ${x[1] < 0 ? '−' : '+'} ${fixed(Math.abs(x[1]), 4)}i`;
+const EIGHT_PI = 8 * PI;
+/** W of a member (8 pi for the double cover), or null when none was found. */
+const memberW = (m) => (m.member ? m.member.W : m.doubleCover ? EIGHT_PI : null);
+/** The members with the least W (a tie is possible: then the minimizer is not unique). */
+function leastMembers(R) {
+  const ws = R.members.map(memberW), lo = Math.min(...ws.filter((w) => w !== null));
+  return ws.map((w) => w !== null && w <= lo * (1 + 1e-6));
 }
-/** What each pane shows when the dot is elsewhere: { i (sample), v (view), label } or null. */
-function paneSpecs(T) {
-  const S = T.samples, node = (lab) => T.nodes.find((n) => n.label === lab);
-  const n1 = node('candidate 1'), n23 = node('candidates 2, 3'), nD = node('candidates 1, 2, 3'), nO = node('open end');
-  const sp = [null, null, null];
-  if (nD) return [{ i: nD.index, v: 0, label: 'Candidate 1 (double arrival)' }, { i: nD.index, v: 0, label: 'Candidate 2 (= candidate 1 at a double arrival)' }, { i: nD.index, v: 1, label: 'Candidate 3 (double arrival)' }];
-  if (n1) sp[0] = { i: n1.index, v: 0, label: 'Candidate 1' };
-  if (n23) { sp[1] = { i: n23.index, v: 0, label: 'Candidate 2' }; sp[2] = { i: n23.index, v: 1, label: 'Candidate 3' }; }
-  else if (nO) {
-    const e2 = S.map((x, k) => k).filter((k) => S[k].edge === 2);
-    const k = e2.reduce((b, q) => (Math.abs(Math.log(S[q].t / 0.01)) < Math.abs(Math.log(S[b].t / 0.01)) ? q : b), e2[0]);
-    sp[1] = { i: k, v: 0, label: `Candidate 2 near the open end (t = ${fixed(S[k].t, 3)})` };
-  }
-  return sp;
+function memberLine(m) {
+  if (m.member) return `genus ${m.member.genus}, W = ${fixed(m.member.W / PI ** 2, 4)} π²`;
+  if (m.doubleCover) return 'the branched double cover of the round sphere, W = 8π';
+  return 'not found';
 }
-const PANE_EMPTY = ['No candidate 1', 'No candidate 2', 'No candidate 3: the genus 2 edge ends at an open end'];
-/** The surface parameters of a pane (one cell of the closing lattice, as params() for a candidate). */
-function paneParams(spec) {
-  const sm = cand.tree.samples[spec.i], view = sm.views[spec.v];
-  const [e1, e2] = view.lattice, l1 = Math.hypot(...e1), l2 = Math.hypot(...e2), m = Math.max(l1, l2), res = Math.min(state.res, 160);
-  const n1 = Math.max(3, Math.round((res * l1) / m)), n2 = Math.max(3, Math.round((res * l2) / m));
-  return { alphas: sm.alphas, theta0: 0, tau: [], z0: [0, 0], phi: 0, width: 1, height: 1, nx: n1, ny: n2, hmax: state.hmax,
-    gen: { lams: view.syms.map((p) => p.lam), signs: view.syms.map((p) => p.sign), projection: state.gen.proj }, cell: view.lattice,
-    sCoords: Array.from({ length: n1 }, (_, i) => (i * l1) / (n1 - 1)), tCoords: Array.from({ length: n2 }, (_, j) => (j * l2) / (n2 - 1)) };
-}
-/** The status line and the busy dot go with the active pane. */
-function moveStatus() {
-  const host = $(panes.on && panes.active ? `pane${panes.active + 1}` : 'stage');
-  for (const id of ['status', 'busy']) if ($(id).parentElement !== host) host.appendChild($(id));
-}
-function paneLabels() {
-  moveStatus();
-  [0, 1, 2].forEach((p) => {
-    const sp = panes.specs[p];
-    $(`plabel${p + 1}`).textContent = p === panes.active && cand.sampleNote ? `Following the tree: ${cand.sampleNote.split('\n')[0]}` : sp ? sp.label : PANE_EMPTY[p];
-    $(p ? `pane${p + 1}` : 'stage').classList.toggle('active', panes.on && p === panes.active);
+function ensureFamViewers() {
+  famViewers.forEach((v, p) => {
+    if (v) return;
+    const w = new Viewer($(`famView${p + 1}`));
+    w.setBackground(state.bg);
+    w.setScale(1 / (2 * state.H));
+    w.setStyle({ gridStep: state.gridStep, lineWidth: state.lineW, front: $('front').value, back: $('back').value, ...textureStyle() });
+    famViewers[p] = w;
+    // double-click: walk the tree of this member
+    $(`famView${p + 1}`).addEventListener('dblclick', () => walkMember(p));
   });
 }
-/** Show pane p's own candidate (when it is not the active pane). */
-function paneShow(p) {
-  const v = viewers[p], r = panes.res[p];
+function setQuarters(on, redraw = true) {
+  document.body.classList.toggle('quarters', on);
+  [1, 2, 3].forEach((p) => { $(`fam${p}`).hidden = !on; });
+  if (on) { ensureFamViewers(); famRefresh(); }
+  famLabels();
+  if (on) famSurfaces();
+  if (redraw) { needFrame = true; changed(false); }
+}
+$('quarters').addEventListener('change', () => setQuarters($('quarters').checked));
+
+/** The pane labels and the list in the panel. */
+function famLabels() {
+  const R = fam.R, least = R ? leastMembers(R) : [false, false, false];
+  [0, 1, 2].forEach((p) => {
+    const m = R && R.members[p];
+    const following = m && fam.follow === p && cand.tau && sameTau(cand.tau, m.tau);
+    $(`famLabel${p + 1}`).textContent = !R ? (fam.busy ? 'Computing the family…' : 'No conformal class chosen') : `h = ${m.half}: internal τ = ${cfmt(m.tau)}\n${memberLine(m)}${least[p] ? ' · least W' : ''}${following ? ' · its tree is shown' : ''}`;
+    $(`fam${p + 1}`).classList.toggle('active', !!following);
+  });
+  $('treeLabel').textContent = cand.sampleNote ? `The tree of internal τ = ${cand.tau ? cfmt(cand.tau) : '?'}: ${cand.sampleNote.split('\n')[0]}` : '';
+}
+function famListHTML(R) {
+  const least = leastMembers(R);
+  return R.members.map((m, p) => `<div class="famrow${least[p] ? ' least' : ''}"><span class="what">h = ${m.half}: ${memberLine(m)}</span>` +
+    `<button class="tbtn" type="button" data-walk="${p}" title="Compute the tree of the internal lattice Γ̂ + h = ⟨1, ${cfmt(m.tau)}⟩ and put its dot on this member">Its tree</button></div>`).join('');
+}
+function famNote(R) {
+  const lines = R.members.map((m) => {
+    const f = m.found.map((x) => `    ${x.how}: W = ${fixed(x.W / PI ** 2, 4)} π²`).join('\n');
+    const ends = m.ends.filter((e) => !e.events).map((e) => `class ${e.open} (${e.why})`).join(', ');
+    return `h = ${m.half}, internal τ = ${cfmt(m.tau)}:\n${f || '    none found'}${ends ? `\n    genus 1 edges without a nodal curve: ${ends}` : ''}`;
+  });
+  const least = leastMembers(R), k = least.filter(Boolean).length;
+  return `Γ̂ = ⟨1, ${cfmt(R.tauExt)}⟩, 8π = ${fixed(EIGHT_PI / PI ** 2, 4)} π². The curves found over each superlattice Γ̂ + h that close on Γ̂, by W:\n${lines.join('\n')}\n` +
+    `The member is the one with the least W if it is at most 8π, otherwise the double cover.${k > 1 ? ` ${k} members have the same least W: the minimizer is not unique here.` : ''} Computed in ${fixed(R.ms / 1000, 1)} s.`;
+}
+$('famList').addEventListener('click', (e) => { const b = e.target.closest('[data-walk]'); if (b) walkMember(+b.dataset.walk); });
+
+/** The surface parameters of a member (one cell of its closing lattice, as params() for a candidate). */
+function memberParams(f) {
+  const [e1, e2] = f.lattice, l1 = Math.hypot(...e1), l2 = Math.hypot(...e2), m = Math.max(l1, l2), res = Math.min(state.res, 160);
+  const n1 = Math.max(3, Math.round((res * l1) / m)), n2 = Math.max(3, Math.round((res * l2) / m));
+  return { alphas: f.alphas, theta0: 0, tau: [], z0: [0, 0], phi: 0, width: 1, height: 1, nx: n1, ny: n2, hmax: state.hmax,
+    gen: { lams: f.syms.map((p) => p.lam), signs: f.syms.map((p) => p.sign), projection: state.gen.proj }, cell: f.lattice,
+    sCoords: Array.from({ length: n1 }, (_, i) => (i * l1) / (n1 - 1)), tCoords: Array.from({ length: n2 }, (_, j) => (j * l2) / (n2 - 1)) };
+}
+/** Compute the surfaces of the three members (in their own worker). */
+function famSurfaces() {
+  if (!fam.R || !quartersOn()) return;
+  if (!fam.surf) {
+    fam.surf = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+    fam.surf.onmessage = (e) => {
+      const { id, result } = e.data;
+      if (!result || Math.floor(id / 10) !== fam.sid) return;
+      fam.res[id % 10] = result;
+      famShow(id % 10);
+    };
+  }
+  fam.sid++;
+  fam.res = [null, null, null];
+  fam.framed = [false, false, false];
+  fam.R.members.forEach((m, p) => {
+    const id = fam.sid * 10 + p;
+    if (m.member) fam.surf.postMessage({ id, params: memberParams(m.member) });
+    else if (m.doubleCover) fam.surf.postMessage({ id, kind: 'doubleCover', params: { tauExt: fam.R.tauExt, n: Math.min(state.res, 160) } });
+  });
+  [0, 1, 2].forEach(famShow);
+}
+function famShow(p) {
+  const v = famViewers[p], r = fam.res[p];
   if (!v) return;
-  v.canvas.style.visibility = panes.specs[p] ? 'visible' : 'hidden';
-  if (!r || p === panes.active) return;
+  const m = fam.R && fam.R.members[p];
+  v.canvas.style.visibility = m && (m.member || m.doubleCover) && r ? 'visible' : 'hidden';
+  if (!r) return;
   applyTurn(r);
   const { vals, range } = colourValues(r);
   v.setSurface(r, vals);
   v.setStyle(textureStyle(range));
   v.setMarkers([]);
-  if (!panes.framed[p]) { v.frame(); panes.framed[p] = true; }
+  if (!fam.framed[p]) { v.frame(); fam.framed[p] = true; }
 }
-function refreshPanes() { if (panes.on) [0, 1, 2].forEach(paneShow); }
-function computePanes() {
-  if (!panes.worker) {
-    panes.worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-    panes.worker.onmessage = (e) => {
-      const { id, result } = e.data;
-      if (!result || Math.floor(id / 10) !== panes.id) return;
-      panes.res[id % 10] = result;
-      paneShow(id % 10);
+function famRefresh() { if (quartersOn()) [0, 1, 2].forEach(famShow); }
+
+/** Compute the family of the conformal class te (the latest request wins). opts.walk: then walk a member's tree. */
+function requestFamily(te, opts = {}) {
+  fam.pending = { te, opts };
+  if (fam.busy) return;
+  const { te: t, opts: o } = fam.pending;
+  fam.pending = null;
+  if (!fam.worker) {
+    fam.worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+    fam.worker.onerror = (e) => { fam.busy = false; $('famBtn').disabled = false; $('famNote').textContent = `worker error: ${e.message}`; };
+    fam.worker.onmessage = (e) => {
+      const { result: R, error } = e.data, o = fam.inflight || {};
+      fam.busy = false;
+      $('famBtn').disabled = false;
+      if (fam.pending) requestFamily(fam.pending.te, fam.pending.opts);
+      if (error) { $('famNote').textContent = error; return; }
+      fam.R = R;
+      extPad.set({ tau: R.tauExt });
+      $('famList').innerHTML = famListHTML(R);
+      $('famNote').textContent = famNote(R);
+      famLabels();
+      famSurfaces();
+      if (o.walk !== false && !fam.pending) {
+        // follow the same member as before (by its half-period), or the one with the least W
+        const least = leastMembers(R);
+        walkMember(fam.follow ?? Math.max(0, least.indexOf(true)));
+      }
     };
   }
-  panes.id++;
-  panes.res = [null, null, null];
-  panes.framed = [false, false, false];
-  panes.specs.forEach((sp, p) => { if (sp) panes.worker.postMessage({ id: panes.id * 10 + p, params: paneParams(sp) }); });
-  [0, 1, 2].forEach(paneShow);
-  paneLabels();
+  fam.busy = true;
+  fam.inflight = o;
+  fam.tau = t;
+  $('famBtn').disabled = true;
+  $('famNote').textContent = `Computing the family of τ̂ = ${cfmt(t)}…`;
+  famLabels();
+  fam.worker.postMessage({ id: ++fam.id, kind: 'family', params: { tauExt: t } });
 }
-/** Make pane p the one the dot drives; the previous one goes back to its candidate. */
-function setActivePane(p) {
-  if (p === panes.active) { paneLabels(); return; }
-  const prev = panes.active;
-  panes.active = p;
-  viewers[prev].setMarkers([]);
-  viewer = viewers[p];
-  viewer.canvas.style.visibility = 'visible';
-  paneShow(prev);
-  paneLabels();
+/** A line for the tree's note when it was computed for a member of the family (or ''). */
+function memberTreeNote(o) {
+  const m = o.member !== undefined && fam.R ? fam.R.members[o.member] : null;
+  if (!m) return '';
+  const what = m.member ? (m.member.onTree ? `${m.member.how}; the dot is on it` : `${m.member.how}; not a node of this tree, which opens the shortest class first`)
+    : m.doubleCover ? 'the branched double cover of the round sphere (every curve found over this lattice has W > 8π)' : 'no curve found over this lattice';
+  return `The tree of the member h = ${m.half} of the family of τ̂ = ${cfmt(fam.R.tauExt)}: ${what}.\n`;
 }
-$('quarters').addEventListener('change', () => {
-  panes.on = $('quarters').checked;
-  document.body.classList.toggle('quarters', panes.on);
-  $('pane2').hidden = $('pane3').hidden = !panes.on;
-  if (panes.on && !viewers[1]) {
-    [1, 2].forEach((p) => {
-      const v = new Viewer($(`view${p + 1}`));
-      v.setBackground(state.bg);
-      v.setScale(1 / (2 * state.H));
-      v.setStyle({ gridStep: state.gridStep, lineWidth: state.lineW, front: $('front').value, back: $('back').value, ...textureStyle() });
-      viewers[p] = v;
-    });
-  }
-  const sm = cand.tree && state.cell ? cand.tree.samples[cand.index] : null;
-  viewers[panes.active].setMarkers([]);
-  panes.active = panes.on ? paneOf(sm, +$('cand2Pick').value || 0) : 0;
-  viewer = viewers[panes.active];
-  viewer.canvas.style.visibility = 'visible';
-  if (panes.on && cand.tree) { panes.specs = paneSpecs(cand.tree); computePanes(); } else paneLabels();
-  needFrame = true;
-  changed(false);
+/** Walk the tree of member p: its internal lattice, with the dot on the member when it is a node of the tree. */
+function walkMember(p) {
+  const m = fam.R && fam.R.members[p];
+  if (!m) return;
+  fam.follow = p;
+  $('tauRe').value = fixed(m.tau[0], 4); $('tauIm').value = fixed(m.tau[1], 4);
+  candPad.set({ tau: m.tau, target: null });
+  cand.which = 2;
+  requestCandidate(m.tau, { node: m.member ? m.member.onTree : null, member: p });
+}
+const extPad = new TauPad($('extPad'), (t, dragging) => {
+  $('extRe').value = fixed(t[0], 4); $('extIm').value = fixed(t[1], 4);
+  requestFamily(t, { walk: !dragging });
 });
+extPad.set({ tau: [0.1855, 1.7195], mode: 'F1' });
+extPad.showAll();
+$('famBtn').addEventListener('click', () => {
+  const re = parseNum($('extRe').value), im = parseNum($('extIm').value);
+  if (re === null || im === null || im <= 0) { $('famNote').textContent = 'The conformal class needs Im τ̂ > 0.'; return; }
+  requestFamily([re, im]);
+});
+for (const id of ['extRe', 'extIm']) $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('famBtn').click(); });
 
 // ------------------------------------------------------------------ candidates (tree.js)
 
 // Candidate 1 for the internal tau: computed in its own worker; on success the spectral data, the two
 // generalized Sym points and one cell of the closing lattice are loaded. Editing the spectral data
 // afterwards leaves the candidate (the drawing goes back to the rectangular domain).
-const cand = { worker: null, id: 0, last: null, lastR: null, map: null, tau: null, busy: false, pending: null, path: null, which: 1, tree: null, index: -1, sampleNote: '' };
+const cand = { worker: null, id: 0, last: null, lastR: null, map: null, tau: null, busy: false, pending: null, path: null, which: 1, tree: null, index: -1, sampleNote: '', wantView: null };
 function leaveCandidate() {
   if (!state.cell) return;
   state.cell = null;
@@ -725,12 +808,12 @@ const treeView = new TreeView($('treeView'), (i, dragging) => { showSample(i); n
 function showSample(i) {
   const T = cand.tree, sm = T.samples[i];
   cand.index = i;
-  const pick = $('cand2Pick'), keep = +pick.value || 0;
+  const pick = $('cand2Pick'), keep = cand.wantView ?? (+pick.value || 0);
+  cand.wantView = null;
   pick.innerHTML = sm.views.map((v, j) => `<option value="${j}">${viewName(v.key)}</option>`).join('');
   pick.value = String(Math.min(keep, sm.views.length - 1));
   pick.hidden = sm.views.length < 2;
   const v = sm.views[+pick.value];
-  if (panes.on) setActivePane(paneOf(sm, +pick.value));
   if (anim) stopAnim();
   state.alphas = sm.alphas.map((a) => a.slice());
   state.gen = { ...state.gen, on: true, lams: v.syms.map((p) => p.lam.slice()), signs: v.syms.map((p) => p.sign) };
@@ -743,7 +826,7 @@ function showSample(i) {
   cand.sampleNote = `${sm.edge === 3 ? 'Genus 1, not opened' : `Genus ${sm.edge}`}${sm.node ? `, ${sm.node}` : ''}: ${sm.edge === 1 || sm.edge === 3 ? `α = −${fixed(-sm.alphas[0][0], 5)}, t = ${fixed(sm.t, 5)}` : `t = ${sm.t < 0.01 ? sm.t.toExponential(2) : fixed(sm.t, 4)}`}, W = ${fixed(sm.W / PI ** 2, 4)} π² (closing lattice).\n${viewName(v.key)}: ${v.ripe ? 'ripe, a torus' : 'not ripe, a plane'}`;
   if (towardsOpenEnd()) cand.sampleNote += ' (the spikes mark the four half-periods, where the limit, the sphere covered twice, is branched)';
   $('treeNote').textContent = cand.sampleNote;
-  if (panes.on) paneLabels();
+  famLabels();
 }
 /** Whether the current sample is candidate 2 on a genus 2 edge that ends at an open end. */
 function towardsOpenEnd() {
@@ -882,7 +965,7 @@ function requestCandidate(tau, opts = {}) {
       if (error) { $('candNote').textContent = error; return; }
       const jump = treeJump(cand.lastR, R, o);
       cand.lastR = R;
-      cand.last = (jump ? `${jump}\n` : '') + (R.which === 2 ? candidate2Note(R) : candidateNote(R));
+      cand.last = (jump ? `${jump}\n` : '') + memberTreeNote(o) + (R.which === 2 ? candidate2Note(R) : candidateNote(R));
       $('candNote').textContent = cand.last;
       $('shapeBtn').hidden = !(R.openEnd && R.choices && R.choices.length && !o.fast);
       $('shapeBtn').disabled = false;
@@ -897,7 +980,12 @@ function requestCandidate(tau, opts = {}) {
       const S = cand.tree.samples, nearX = (x, edge) => S.reduce((b, s, i) => ((s.edge === edge) === (edge === 3) && Math.abs(s.x - x) < Math.abs(S[b].x - x) ? i : b), S.findIndex((s) => (s.edge === edge) === (edge === 3)));
       const kind = (T) => T.nodes.map((n) => n.label).join();
       let idx;
-      if (o.place) {
+      const nodeAt = o.node ? cand.tree.nodes.find((n) => n.label === o.node.label) : null;
+      if (nodeAt) {
+        // a member of the candidate family that is a node of this tree
+        idx = nodeAt.index;
+        cand.wantView = o.node.view;
+      } else if (o.place) {
         // a dragged genus 2 curve: the point of the genus 2 edge at its scale (clamped to the edge)
         const e2 = S.map((s, i) => [s, i]).filter(([s]) => s.edge === 2);
         idx = e2.length ? e2.reduce((b, [s, i]) => (Math.abs(Math.log(s.t / o.place)) < Math.abs(Math.log(S[b].t / o.place)) ? i : b), e2[0][1]) : S.length - 1;
@@ -908,7 +996,6 @@ function requestCandidate(tau, opts = {}) {
         idx = main.length ? main[main.length - 1].index : S.length - 1;
       }
       treeView.set({ index: idx });
-      if (panes.on) { panes.specs = paneSpecs(cand.tree); computePanes(); }
       if (o.show === false) { cand.index = idx; return; }
       showSample(idx);
       if (!cand.pending && !o.place) needFrame = true;
@@ -930,7 +1017,7 @@ function refreshGen() {
   $('proj').value = G.proj;
   widget.set({ gen: G.on ? { lams: G.lams, signs: G.signs } : null });
 }
-$('proj').addEventListener('change', () => { state.gen.proj = $('proj').value; changed(false); });
+$('proj').addEventListener('change', () => { state.gen.proj = $('proj').value; changed(false); famSurfaces(); });
 
 $('addAlpha').addEventListener('click', () => {
   if (genus() >= MAX_GENUS) return;
@@ -1061,8 +1148,8 @@ function slider(parent, { label, min: lo, max: hi, step, get, set, digits = 3, u
 const turnSliders = [0, 1].map((i) => slider($('turnRows'), {
   label: `4D turn ${i ? 'y' : 'x'}`, title: `Turn the surface in R⁴ in the plane of ${i ? 'y' : 'x'} and the dropped fourth coordinate`,
   min: -PI, max: PI, step: 0.001, unit: PI, suffix: 'π', get: () => state.turn[i],
-  set: (v) => { state.turn[i] = v; if (last) show(last); refreshPanes(); },
-  reset: { title: 'Back to 0', onClick: () => { state.turn[i] = 0; turnSliders[i].refresh(); if (last) show(last); refreshPanes(); } },
+  set: (v) => { state.turn[i] = v; if (last) show(last); famRefresh(); },
+  reset: { title: 'Back to 0', onClick: () => { state.turn[i] = 0; turnSliders[i].refresh(); if (last) show(last); famRefresh(); } },
   recompute: false,
 }));
 const appearanceSliders = [
@@ -1125,9 +1212,9 @@ function showFamily() {
 $('colour').addEventListener('change', () => {
   state.colour = $('colour').value;
   if (last) recolour(); else viewer.setStyle(textureStyle());
-  refreshPanes();
+  famRefresh();
 });
-$('grid').addEventListener('change', () => { state.grid = $('grid').checked; viewer.setStyle(textureStyle()); refreshPanes(); });
+$('grid').addEventListener('change', () => { state.grid = $('grid').checked; viewer.setStyle(textureStyle()); famRefresh(); });
 $('front').addEventListener('input', () => eachViewer((w) => w.setStyle({ front: $('front').value })));
 $('back').addEventListener('input', () => eachViewer((w) => w.setStyle({ back: $('back').value })));
 $('bg').addEventListener('input', () => setBackground($('bg').value));
@@ -1137,7 +1224,7 @@ function setBackground(c) {
   eachViewer((w) => w.setBackground(c));
 }
 $('adapt').addEventListener('change', () => { state.adapt = $('adapt').checked; changed(false); });
-$('res').addEventListener('change', () => { state.res = +$('res').value; changed(false); });
+$('res').addEventListener('change', () => { state.res = +$('res').value; changed(false); famSurfaces(); });
 $('acc').addEventListener('change', () => {
   state.adaptive = $('acc').value === 'adaptive';
   state.hmax = state.adaptive ? 0.05 : +$('acc').value;
@@ -1183,6 +1270,7 @@ presetSel.addEventListener('change', () => {
   if (!p) return;
   if (anim) stopAnim();
   presetSel.value = '';
+  if (p.c) { pendingFamily = p.c; viewer.resetOrientation(); runPendingFamily(); return; }
   if (p.k) { pendingCandidate = p.k; viewer.resetOrientation(); runPendingCandidate(); return; }
   leaveCandidate();
   Object.assign(state, structuredClone(VIEW_DEFAULTS), structuredClone(p.s));
@@ -1240,6 +1328,7 @@ function refreshAll() {
 window.addEventListener('hashchange', () => {
   const ok = readHash();
   clearHash();
+  if (pendingFamily) { runPendingFamily(); return; }
   if (pendingCandidate) { runPendingCandidate(); return; }
   if (!ok) return;
   snapLinkLam();
@@ -1251,14 +1340,25 @@ window.addEventListener('hashchange', () => {
 });
 
 if (location.hash) { readHash(); snapLinkLam(); clearHash(); }
-// without a link: a typical case, candidate 2 for internal tau = 0.45 + 0.95i (candidates 2 and 3 exist)
-else pendingCandidate = [0.45, 0.95, 2];
+// without a link: the candidate family of a conformal class where all three members are tori of genus 1
+else pendingFamily = DEFAULT_CLASS;
 syncTau();
 makeWorker();
 refreshAll();
 setBackground(state.bg);
+setQuarters($('quarters').checked, false);
 // the candidate draws itself when it arrives; otherwise draw the data from the link
-if (!pendingCandidate) changed(false);
+if (!pendingCandidate && !pendingFamily) changed(false);
+/** The family of the conformal class of a link or preset (c = [re, im] or [re, im, member to follow]). */
+function runPendingFamily() {
+  const c = pendingFamily;
+  pendingFamily = null;
+  fam.follow = c.length === 3 && [0, 1, 2].includes(c[2]) ? c[2] : null;
+  $('extRe').value = String(c[0]); $('extIm').value = String(c[1]);
+  extPad.set({ tau: [c[0], c[1]], target: null });
+  requestFamily([c[0], c[1]]);
+}
+if (pendingFamily) runPendingFamily();
 function runPendingCandidate() {
   $('tauRe').value = String(pendingCandidate[0]); $('tauIm').value = String(pendingCandidate[1]);
   const two = pendingCandidate[2] === 2;

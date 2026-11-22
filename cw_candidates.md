@@ -23,10 +23,10 @@ There's a third candidate, but we can implement that later.
 
 In general, the "tree" consists edges of τ-preserving flow within spectral curves on a given genus, and branching by inserting and opening nodes when resonance points reach \bbS^1 (or not). 
 
-## Findings so far (November 2026; last updated 17 November)
+## Findings so far (November 2026; last updated 22 November)
 
 Each item says how it was checked. The code and its status are in `PLAN.md` (in the code repository, `~/programming/web/cw-families`).
-Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in the papers folder (`2026-post-qft`), Bohle 2010 (Constrained Willmore tori in the 4-sphere), and Bohle–Leschke–Pedit–Pinkall 2012 (BLPP, Conformal maps from a 2-torus to the 4-sphere).
+Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in the papers folder (`2026-post-qft`), Bohle 2010 (Constrained Willmore tori in the 4-sphere), Bohle–Leschke–Pedit–Pinkall 2012 (BLPP, Conformal maps from a 2-torus to the 4-sphere), Knopf–Peña Hoepner–Schmidt 2025 (K-PH-S, Solutions of the sinh-Gordon equation of spectral genus two and constrained Willmore tori I), and Schmidt's DFG proposal as rewritten in November 2026 (`antrag_rewrite_11_26.pdf`).
 
 1. F1: Sinh-Gordon curves are constrained Willmore spectral curves.
    For CMC tori (with a suitable Lagrange multiplier) the constrained Willmore spectral curve is a double cover of the spectral plane, branched over 0 and ∞, and equals the harmonic map curve ν^2 = λ a(λ) (Bohle 2010, Theorem 5.1 Case II and Proposition 6.8).
@@ -124,6 +124,19 @@ Sources: the notes `background/genus_zero.tex` and `background/genus_one.tex` in
    3. The external τ depends only on the internal lattice and on the classes of the two Sym points (F8). So candidates 1 and 2 (classes [1] and a) have the same external τ, and so do candidate 3 and candidate 1′ when the other pair arrives (classes [1] and b). At 0.45 + 0.95i: candidates 1 and 2 have external τ −0.0871 + 1.5768i, with W = 2.3131π² and 2.4725π²; candidates 3 and 1′ have external τ 0.1855 + 1.7195i, with W = 2.4725π² and 2.4857π².
    4. W increases along the branch too. Unlike the other candidates, candidate 1′ mostly has W > 8π: at 1503 of the 1578 points of the map where it exists, up to 2.93π². So the argument of F7 for W < 8π does not cover it (the formula is still a conformal immersion, F7.1).
    Checked: numerically (tests at 0.45 + 0.95i, 0.2 + 1.3i and 0.5 + 0.9i), and point 3 by F8.
+17. F17: The candidate family is indexed by the conformal class of the torus, with one member for each half-period (22 November; from Schmidt's rewritten proposal and K-PH-S, Sections 4–5).
+   1. In K-PH-S the genus 1 curves with one σ-node over S^1 (their M^2_2) map onto the lattice of the potential (our internal τ) by a threefold covering (Remark 4.2). The Sym points are the branch points and the node (Lemma 5.1), and the torus closes on the index 2 sublattice on which their characters agree (Lemma 5.3, our F8). These are exactly the curves at the events of our genus 1 edges. At internal τ = 0.2 + 1.3i the three are candidate 1, candidate 1′, and a curve on the edge that opens class 2 first, with a node of class 1, which the tree does not reach.
+   2. The three curves over one internal τ close on different sublattices. Conversely, a conformal class τ̂ has three index 2 superlattices Γ̂ + h, one for each half-period h of C/Γ̂, and over each of them one of the nodal curves found closes on Γ̂. So the genus 1 family is also a threefold covering of the conformal classes, as the proposal says, and its members are labelled by h.
+   3. The least W of the three reproduces Fig. 1 of the proposal: 1.601 × 4π at τ̂ = 0.02 + 1.02i (π/2 at the Clifford torus); π^2 (y + 1/y) at the rectangular class iy, to 5e-9 for y = 1.5 (the homogeneous torus, whose internal τ lies on |τ| = 1); and 1.989 × 4π at 0.45 + 1.42i, which is on the curve W = 8π of Fig. 1.
+   4. The label of a pair does not determine the character of its node. At internal 0.2 + 1.3i the pair of class 2 arrives (candidate 1, τ̂ = −0.3133 + 1.1159i) and later leaves S^1 (candidate 1′, τ̂ = −0.2312 + 1.5029i). The branch point is the same, but the closing lattices differ. The curve that opens class 2 with a node of class 1 closes on 0.4 + 2.6i. F16.3 holds for the case it states (the other pair arriving); the reason for the difference is unchecked (perhaps q at a node is only determined modulo ½Γ).
+   5. The proposal's family (O-S-2) differs from that of K-PH-S where curves of genus 2 have less W. The page uses this rule: over each superlattice, among the genus 1 nodal curves and the genus 2 candidates of its tree that close on Γ̂, the member is the one with the least W if that is at most 8π, and otherwise the branched double cover of the round sphere.
+      1. At τ̂ = 0.1855 + 1.7195i, over h = (1 + τ̂)/2 (internal 0.45 + 0.95i), candidate 3 (genus 2, 2.4725π^2) beats candidate 1′ (genus 1, 2.4857π^2), as in F16.3. Over h = τ̂/2 the only curve found has 2.7726π^2 > 8π, so the member is the double cover.
+      2. At τ̂ = 0.45 + 1.2i all three members have genus 1 and W < 8π. Over h = τ̂/2, genus 1 (2.5222π^2) beats candidate 2 (2.5464π^2).
+      3. Near the Clifford torus only one member is below 8π; the curves over the other two superlattices (internal τ near 2i) have W just above 8π.
+   6. Limits of the search:
+      1. Over a superlattice with Im τ̃ above about 3 no nodal curve is found. The edges end at r = 1e-4, and r = 1e-8 does not help. Example: τ̂ = 0.1855 + 1.7195i, h = ½, internal 0.371 + 3.439i.
+      2. Genus 2 curves are only searched on the tree that opens the shortest class first.
+   Checked: numerically, at the classes named above (tests in `test/run.mjs` for 1.5i and 0.45 + 1.2i). The selection rule in point 5 is a reading of the proposal, not a theorem.
 
 ## Open questions
 
@@ -131,6 +144,7 @@ Settled (answers from Ross):
 
 1. Class matching: take the double cover whenever necessary. Since the three marked pairs have three different classes, this is always the case when the two Sym pairs are different marked pairs (F8).
 2. Which conformal class is fixed: the internal τ (of Γ) is fixed; the external τ (of the torus, on the index 2 sublattice of F8) is derived and generally differs. There is no good way yet to fix the external τ ab initio; to be revisited once the candidates are understood better.
+   Update (F17): the proposal indexes the family by the external τ̂, and the internal τ of each member is one of the three superlattices of ⟨1, τ̂⟩. The page now starts from τ̂.
 3. Candidates 2 and 3: they have the same (genus 2) spectral curve; candidate 2 takes the two pairs of branch points as Sym points, candidate 3 the pair of branch points from genus 1 and the resonance pair arriving on S^1. All candidates on one curve differ only in which resonances are the Sym points (also at a double arrival, F14). Where the edge reaches the open end first, the limit is a branched double cover of the sphere (confirmed numerically, F12).
 
 Open:
@@ -145,3 +159,5 @@ Open:
    Implemented as candidate 1′ (F16), drawn as a dashed branch in the tree view. Its meaning, and whether it should count among the candidates (it shares the conformal class of candidate 3), is open.
 8. Can the regions of F_6 choose the candidate, instead of explicit buttons (Find candidate 1, Find candidates 2, 3, the view picker)? That is, does the position of the internal τ in F_6 (the chamber of the class order, and which side of the boundary of F15 it lies on) determine which candidate to show?
    For now the page can show all three side by side (Three candidates side by side), and the map of F_6 on the τ pad shows where candidates 2 and 3 exist.
+   Partly answered by F17: the member over each superlattice is chosen by least W. The page now shows the three members of the family of τ̂, and the tree of one of them.
+9. Is "least W over each superlattice, else the double cover" (F17.5) the family of Conjecture 1? In particular, is it continuous where the choice switches between genus 1, genus 2 and the double cover? And where is the third nodal curve over superlattices with large Im τ̃ (F17.6)?

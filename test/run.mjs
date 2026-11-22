@@ -10,9 +10,9 @@ import { periodVector, periodLattice, commonRootsOnCircle, basicPeriods, thetaPo
 import { WhithamCurve } from '../src/cmc/whitham.js';
 import { RootFlow, symData } from '../src/cmc/rootflow.js';
 import { ellipticKE, nodalBoundary, f0, openEndTau } from '../src/cmc/genus2.js';
-import { PairIntegrator, leftEigenvector, nuAt, qmul, qdiv, computeGenSurface } from '../src/cmc/gensym.js';
+import { PairIntegrator, leftEigenvector, nuAt, qmul, qdiv, computeGenSurface, doubleCoverSurface } from '../src/cmc/gensym.js';
 import { QMap, genus0Resonance, classifyPair } from '../src/cmc/resonance.js';
-import { genus0Edge, genus1Scale, candidate1, candidate2, genus2Edge, reduceTau, torusBasis, kOf, treeOf, paritySublattice, dualBasis, locateOnTree } from '../src/cmc/tree.js';
+import { genus0Edge, genus1Scale, candidate1, candidate2, genus2Edge, reduceTau, torusBasis, kOf, treeOf, paritySublattice, dualBasis, locateOnTree, familyOf, superlattices, sameClass } from '../src/cmc/tree.js';
 import { generator } from '../src/cmc/cmc.js';
 import {
   TauFlow, leafData, periodsOf, rationalPlanes, saturate, reduceFrame, classOrder, nearbyPeriods,
@@ -734,6 +734,30 @@ console.log('the tree: genus 0 edge, opening at lam = -1, genus 1 edge, candidat
 }
 
 // ------------------------------------------------------------------ timing
+console.log('the candidate family of a conformal class (familyOf; the proposal, Section 1.6, and K-PH-S):');
+{
+  // a rectangular class: the member with the least W is the homogeneous torus, W = pi^2 (y + 1/y)
+  const y = 1.5, F = familyOf([0, y]), ws = F.members.map((m) => (m.member ? m.member.W : Infinity));
+  check(`tau^ = ${y}i: least W = ${(Math.min(...ws) / Math.PI ** 2).toFixed(6)} pi^2 is that of the homogeneous torus, pi^2 (y + 1/y)`, Math.abs(Math.min(...ws) / (Math.PI ** 2 * (y + 1 / y)) - 1), 1e-5);
+  // three members of genus 1 below 8 pi, one over each superlattice, each closing on the class
+  const G = familyOf([0.45, 1.2]);
+  check('tau^ = 0.45 + 1.2i: three members of genus 1 with W < 8 pi', 3 - G.members.filter((m) => m.member && m.member.genus === 1 && m.member.W < 8 * Math.PI).length, 0);
+  check('each member closes on <1, tau^>', Math.max(...G.members.map((m) => (m.member && sameClass(m.member.tauExt, [0.45, 1.2]) ? 0 : 1))), 0);
+  // the superlattices contain <1, tau^> with index 2: their covolume is half
+  const sl = superlattices([0.45, 1.2]);
+  check('the three superlattices are distinct classes', sl.some((a, i) => sl.some((b, j) => i < j && sameClass(a.tau, b.tau))) ? 1 : 0, 0);
+  // the branched double cover: on the unit sphere and even, f(-z) = f(z)
+  const D = doubleCoverSurface([0.2, 1.3], { n: 40 }), N = D.nx * D.ny;
+  let off = 0, odd = 0;
+  for (let v = 0; v < N; v++) {
+    off = Math.max(off, Math.abs(Math.hypot(D.pos[3 * v], D.pos[3 * v + 1], D.pos[3 * v + 2]) - 1));
+    const w = N - 1 - v;
+    for (let e = 0; e < 3; e++) odd = Math.max(odd, Math.abs(D.pos[3 * v + e] - D.pos[3 * w + e]));
+  }
+  check('double cover: on the unit sphere', off, 1e-6);
+  check('double cover: f(-z) = f(z) on the cell centred at 0', odd, 1e-6);
+}
+
 console.log('timing:');
 for (const [g, n] of [[2, 64], [2, 256], [4, 256]]) {
   const alphas = [[0.6, 0], [0, 0.4], [-0.5, -0.3], [0.2, -0.7]].slice(0, g);

@@ -592,3 +592,56 @@ export function meshNormals(pos, nx, ny, nrm) {
     }
   }
 }
+
+/**
+ * The branched double cover of the round sphere by the torus C/<L, L tauExt> (the member of the candidate
+ * family where every constrained Willmore curve found has W > 8 pi): z -> (theta_4(pi z) / theta_1(pi z))^2
+ * for the lattice <1, tauExt> is elliptic of degree 2 (branched at the four half-periods), composed with the
+ * inverse stereographic projection. On an n1 x n2 grid of the cell centred at 0, in the result format of
+ * computeGenSurface (pos4 with x_4 = 0); u = log |df| for the texture. W = 8 pi.
+ */
+export function doubleCoverSurface(tauExt, { n = 160, L = 4 } = {}) {
+  const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
+  const [tx, ty] = tauExt, lt = Math.hypot(tx, ty);
+  const n1 = Math.max(3, Math.round((n * 1) / Math.max(1, lt))), n2 = Math.max(3, Math.round((n * lt) / Math.max(1, lt)));
+  // q = e^{i pi tau}
+  const qa = Math.exp(-Math.PI * ty), qp = Math.PI * tx;
+  const qpow = (e) => [qa ** e * Math.cos(qp * e), qa ** e * Math.sin(qp * e)];
+  const mul = ([a, b], [c, d]) => [a * c - b * d, a * d + b * c];
+  const csin = ([x, y]) => [Math.sin(x) * Math.cosh(y), Math.cos(x) * Math.sinh(y)];
+  const ccos = ([x, y]) => [Math.cos(x) * Math.cosh(y), -Math.sin(x) * Math.sinh(y)];
+  const theta = (z) => {
+    let t1 = [0, 0], t4 = [1, 0];
+    for (let k = 0; k < 12; k++) {
+      const s = k % 2 ? -1 : 1;
+      const a = mul(qpow((k + 0.5) ** 2), csin([(2 * k + 1) * z[0], (2 * k + 1) * z[1]]));
+      t1 = [t1[0] + 2 * s * a[0], t1[1] + 2 * s * a[1]];
+      if (k) { const b = mul(qpow(k * k), ccos([2 * k * z[0], 2 * k * z[1]])); t4 = [t4[0] + 2 * s * b[0], t4[1] + 2 * s * b[1]]; }
+    }
+    return [t1, t4];
+  };
+  const N = n1 * n2, P4 = new Float64Array(4 * N), st = new Float32Array(2 * N), u = new Float32Array(N);
+  for (let j = 0; j < n2; j++) for (let i = 0; i < n1; i++) {
+    const a = i / (n1 - 1) - 0.5, b = j / (n2 - 1) - 0.5, z = [a + b * tx, b * ty];
+    const [t1, t4] = theta([Math.PI * z[0], Math.PI * z[1]]);
+    const d = t1[0] * t1[0] + t1[1] * t1[1];
+    let w = [(t4[0] * t1[0] + t4[1] * t1[1]) / d, (t4[1] * t1[0] - t4[0] * t1[1]) / d];
+    w = mul(w, w);
+    const m = w[0] * w[0] + w[1] * w[1], v = j * n1 + i;
+    if (Number.isFinite(m)) { P4[4 * v] = (2 * w[0]) / (1 + m); P4[4 * v + 1] = (2 * w[1]) / (1 + m); P4[4 * v + 2] = (m - 1) / (1 + m); }
+    else P4[4 * v + 2] = 1; // the pole: the north pole
+    st[2 * v] = a * L; st[2 * v + 1] = b * L * lt;
+  }
+  const pos = new Float32Array(3 * N), w4 = new Float32Array(N), nrm = new Float32Array(3 * N);
+  for (let v = 0; v < N; v++) for (let e = 0; e < 3; e++) pos[3 * v + e] = P4[4 * v + e];
+  meshNormals(pos, n1, n2, nrm);
+  // |df| by differences along the grid, for the texture "conformal factor"
+  for (let j = 0; j < n2; j++) for (let i = 0; i < n1; i++) {
+    const v = j * n1 + i, i1 = Math.min(n1 - 1, i + 1), i0 = Math.max(0, i - 1);
+    const ds = ((i1 - i0) * L) / (n1 - 1), g = [0, 1, 2].map((e) => pos[3 * (j * n1 + i1) + e] - pos[3 * (j * n1 + i0) + e]);
+    u[v] = Math.log(Math.max(1e-12, Math.hypot(...g) / ds));
+  }
+  const bbox = [-1, -1, -1, 1, 1, 1];
+  const t1 = (typeof performance !== 'undefined' ? performance : Date).now();
+  return { nx: n1, ny: n2, pos4: Float32Array.from(P4), pos, w4, nrm, u, st, bbox, phi: 0, us: null, projection: 'sphere', stats: { ms: t1 - t0 } };
+}

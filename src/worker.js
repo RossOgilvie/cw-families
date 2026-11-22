@@ -2,13 +2,15 @@
 // Message in:  { id, kind: 'candidate1', params: { tau } } (candidate 1 and the tree, tree.js),
 //              { id, kind: 'candidate2', params: { tau, fast } } (candidates 1-3 and the tree),
 //              { id, kind: 'shapes', params: { choices } } (the open-end shape diagnostics),
+//              { id, kind: 'family', params: { tauExt } } (the candidate family of a conformal class),
+//              { id, kind: 'doubleCover', params: { tauExt, n } } (its branched double cover of the sphere),
 //              { id, params }   (params as for computeSurface; with params.gen = { lams, signs, projection }
 //              the generalized Sym surface of gensym.js), { id, kind: 'close', params },
 // Message out: { id, result } or { id, error }
 
 import { computeSurface, closingInfo } from './cmc/cmc.js';
-import { computeGenSurface } from './cmc/gensym.js';
-import { candidate1, candidate2, treeOf, openEndShapes } from './cmc/tree.js';
+import { computeGenSurface, doubleCoverSurface } from './cmc/gensym.js';
+import { candidate1, candidate2, treeOf, openEndShapes, familyOf } from './cmc/tree.js';
 
 /** The branch at candidate 1 that does not open the node (candidate 1'), for the note. */
 const branchInfo = (b) => (b && b.event ? { name: b.event.name, cls: b.event.cls, leaving: b.event.leaving, r: b.event.r, W: b.W, tauExt: b.tauExt, closing: b.defects.closing } : null);
@@ -69,6 +71,24 @@ self.onmessage = (e) => {
     } catch (err) {
       self.postMessage({ id, error: String(err && err.message ? err.message : err) });
     }
+    return;
+  }
+  if (kind === 'family') {
+    try {
+      const t0 = performance.now();
+      const F = familyOf(params.tauExt);
+      const slim = (f) => f && { genus: f.genus, how: f.how, W: f.W, alphas: f.alphas, syms: f.syms, lattice: f.lattice, tauExt: f.tauExt, onTree: f.onTree };
+      const members = F.members.map((m) => ({ half: m.half, tau: m.tau, found: m.found.map(slim), member: slim(m.member), doubleCover: m.doubleCover, open: m.open,
+        ends: m.ends.map((e) => ({ open: e.open, events: e.events, why: e.end.why, r: e.end.r })) }));
+      self.postMessage({ id, result: { tauExt: F.tauExt, members, ms: performance.now() - t0 } });
+    } catch (err) {
+      self.postMessage({ id, error: String(err && err.message ? err.message : err) });
+    }
+    return;
+  }
+  if (kind === 'doubleCover') {
+    const r = doubleCoverSurface(params.tauExt, { n: params.n });
+    self.postMessage({ id, result: r }, [r.pos.buffer, r.nrm.buffer, r.u.buffer, r.st.buffer, r.pos4.buffer, r.w4.buffer]);
     return;
   }
   if (kind === 'close') {

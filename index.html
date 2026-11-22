@@ -31,21 +31,25 @@
   }
   #busy.on { opacity: 0.8; animation: pulse 0.9s ease-in-out infinite alternate; }
   @keyframes pulse { from { transform: scale(0.6); } to { transform: scale(1); } }
-  /* three candidates side by side: the screen in quarters, the panel in the fourth */
+  /* four panes beside the panel: the three members of the candidate family and the tree */
   .pane.extra { position: relative; min-width: 0; min-height: 0; }
   .pane.extra canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
   .plabel {
     position: absolute; left: 14px; bottom: 10px; right: 14px; font-size: 15px; font-style: italic; color: var(--ink);
-    pointer-events: none; display: none;
+    pointer-events: none; display: none; white-space: pre-line;
   }
-  body.quarters { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
-  body.quarters #stage { grid-area: 1 / 1; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
-  body.quarters #pane2 { grid-area: 1 / 2; border-bottom: 1px solid var(--rule); }
-  body.quarters #pane3 { grid-area: 2 / 1; border-right: 1px solid var(--rule); }
-  body.quarters #panel { grid-area: 2 / 2; border-left: 0; min-height: 0; }
+  body.quarters { display: grid; grid-template-columns: 1fr 1fr 360px; grid-template-rows: 1fr 1fr; }
+  body.quarters #fam1 { grid-area: 1 / 1; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+  body.quarters #fam2 { grid-area: 1 / 2; border-bottom: 1px solid var(--rule); }
+  body.quarters #fam3 { grid-area: 2 / 1; border-right: 1px solid var(--rule); }
+  body.quarters #stage { grid-area: 2 / 2; }
+  body.quarters #panel { grid-area: 1 / 3 / 3 / 4; min-height: 0; }
   body.quarters .plabel { display: block; }
   body.quarters #keys { display: none; }
   .pane.active .plabel { color: var(--accent); }
+  .famrow { display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: 6px; margin: 4px 0 0 4px; font-size: 15.5px; line-height: 1.3; }
+  .famrow.least .what { color: var(--accent); }
+  .famrow .tbtn { font-size: 15px; padding: 1px 6px; }
   #keys {
     position: absolute; left: 14px; bottom: 10px; font-size: 14.5px; font-style: italic; color: var(--muted);
     pointer-events: none;
@@ -181,7 +185,7 @@
   .bphead { height: 30px; margin-top: 2px; }
   .candrow { display: flex; align-items: center; gap: 6px; margin: 4px 0 6px 4px; }
   .candrow .num { width: 64px; }
-  #candNote { white-space: pre-line; }
+  #candNote, #famNote { white-space: pre-line; }
   #genInfo { font-size: 14px; margin: 6px 0 2px 4px; }
   .bphead i { font-style: italic; }
   .bprow {
@@ -193,7 +197,7 @@
 
   #treeView { width: 100%; height: 170px; display: block; margin: 6px 0 2px; touch-action: none; }
   #treeNote { white-space: pre-line; }
-  #candPad { width: 100%; max-width: 290px; aspect-ratio: 1; display: block; margin: 2px auto 0; touch-action: none; }
+  #candPad, #extPad { width: 100%; max-width: 290px; aspect-ratio: 1; display: block; margin: 2px auto 0; touch-action: none; }
   #dpHover { min-height: 1.35em; }
   #dpHover:empty { display: block; }
   #sizeRows { --labw: 50px; }
@@ -213,27 +217,48 @@
     #panel { flex: none; height: auto; overflow: visible; border-left: none; border-top: 1px solid var(--rule); padding: 14px 16px 48px; }
     #lam { max-width: 360px; margin: 4px auto 0; }
     #keys { display: none; }
+    body.quarters { display: flex; }
+    body.quarters .pane.extra { flex: none; height: 50vh; min-height: 280px; border-bottom: 1px solid var(--rule); }
   }
 </style>
 </head>
 <body>
+<div class="pane extra" id="fam1" hidden><canvas id="famView1"></canvas><div class="plabel" id="famLabel1"></div></div>
+<div class="pane extra" id="fam2" hidden><canvas id="famView2"></canvas><div class="plabel" id="famLabel2"></div></div>
+<div class="pane extra" id="fam3" hidden><canvas id="famView3"></canvas><div class="plabel" id="famLabel3"></div></div>
+
 <div id="stage" class="pane">
   <canvas id="view"></canvas>
-  <div class="plabel" id="plabel1"></div>
+  <div class="plabel" id="treeLabel"></div>
   <div id="status"></div>
   <div id="busy"></div>
   <div id="keys">Drag: rotate · shift-drag: roll · wheel / ±: zoom · WASD QE: move · F: frame · R: reset</div>
 </div>
 
-<div class="pane extra" id="pane2" hidden><canvas id="view2"></canvas><div class="plabel" id="plabel2"></div></div>
-<div class="pane extra" id="pane3" hidden><canvas id="view3"></canvas><div class="plabel" id="plabel3"></div></div>
-
 <aside id="panel">
   <h1>Willmore candidates</h1>
-  <p class="sub">Walking a tree of sinh-Gordon spectral data at fixed internal τ, to candidates for constrained Willmore tori, drawn in ℝ⁴ by the generalized Sym formula.</p>
+  <p class="sub">The candidate family for the minimizers of the Willmore energy in a conformal class: three constrained Willmore tori, one for each half-period of the torus, and the tree of sinh-Gordon spectral data that leads to them, drawn in ℝ⁴ by the generalized Sym formula.</p>
 
   <section class="sec">
-    <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="candBox"><span class="chev" data-glyph="chev"></span>Candidates</button></h2>
+    <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="famBox"><span class="chev" data-glyph="chev"></span>Candidate family</button></h2>
+    <div class="secbody" id="famBox">
+      <div class="candrow">
+        <span class="lab">conformal class τ̂</span>
+        <input class="num" id="extRe" type="text" inputmode="decimal" autocomplete="off" value="0.1855" aria-label="Real part of τ̂, the conformal class of the torus">
+        <span>+</span>
+        <input class="num" id="extIm" type="text" inputmode="decimal" autocomplete="off" value="1.7195" aria-label="Imaginary part of τ̂">
+        <span>i</span>
+      </div>
+      <canvas id="extPad" aria-label="The conformal class τ̂ in F₁; drag to move it and recompute the family" title="The conformal class τ̂ of the torus C/⟨1, τ̂⟩, in the fundamental domain F₁. Drag to move it (the family is recomputed, a second or two each time; the latest request wins). The wheel zooms, shift-drag pans, double-click shows all of F₁."></canvas>
+      <div class="btnrow"><button class="tbtn" id="famBtn" type="button" title="For each of the three index 2 superlattices Γ̂ + h of Γ̂ = ⟨1, τ̂⟩ (h a half-period of the torus): the constrained Willmore curves over it that close on Γ̂, and the one with the least W">Find the family</button></div>
+      <div id="famList"></div>
+      <p class="note" id="famNote"></p>
+      <label class="cb"><input type="checkbox" class="chk" id="quarters" checked><span>Four panes: the family and the tree</span></label>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2 class="sech"><button class="disc" type="button" aria-expanded="true" aria-controls="candBox"><span class="chev" data-glyph="chev"></span>Tree</button></h2>
     <div class="secbody" id="candBox">
       <div class="candrow">
         <span class="lab">internal τ</span>
@@ -254,7 +279,6 @@
       <p class="note" id="mapNote"></p>
       <div class="btnrow"><button class="tbtn" id="cand2Btn" type="button" title="Candidate 1, then open its node into genus 2 and follow the τ-preserving flow until the remaining pair arrives: candidates 2 and 3 (and the third choice of Sym points) on that spectral curve">Find candidates 2, 3</button>
         <select id="cand2Pick" hidden aria-label="The two generalized Sym points"></select></div>
-      <label class="cb"><input type="checkbox" class="chk" id="quarters"><span>Three candidates side by side</span></label>
       <div class="btnrow"><button class="tbtn" id="cand1Btn" type="button" title="Open the pair for 1 at the starting scale and follow the genus 1 edge to the first arrival of a marked pair at the unit circle">Find candidate 1</button></div>
       <canvas id="treeView" tabindex="0" aria-label="The tree: W against the path through the genus 0, 1 and 2 edges; drag the dot to draw the immersion there" title="The tree of the internal τ: W (on the closing lattice, in units of π²) along the genus 1 and 2 edges, from the opening to the candidates; dashed blue: the genus 1 edge continued without opening the node, to candidate 1′. Drag the dot (it snaps to the nodes) or use the arrow keys (up and down switch to and from the dashed branch) to draw the immersion at that point; double-click shows W from 0. Before the Sym points are ripe it is a plane, invariant under homotheties."></canvas>
       <p class="note" id="treeNote"></p>

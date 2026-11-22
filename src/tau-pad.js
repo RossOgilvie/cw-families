@@ -11,6 +11,9 @@
 // with shift-drag and widens by itself when the point nears its edge; a faint trail shows where the
 // flow has been and small crosses where it stopped. Double-click shows all of F_6.
 //
+// Mode 'F1' alone (the conformal class of a torus, for the candidate family): only F_1 is drawn, and the
+// window starts on it.
+//
 // Genus 2 (g2: true): the domain is F_3 = { |x| <= 1, |τ| >= 1 }, drawn alone, with its three copies of F_1
 // (cut by the lines x = ±1/2 and the arcs |τ ∓ 1| = 1), and the view starts on all of it. curves: the
 // boundary of S^2 in F_3 (genus2.js), at the nodal end (solid) and at the open end (dashed).
@@ -18,6 +21,7 @@
 import { classOrder } from './cmc/leaf.js';
 
 const F6_VIEW = [-1.25, 1.25, -0.1, 2.4];
+const F1_VIEW = [-0.8, 0.8, 0.7, 2.3];
 const LABELS = [[0, 1.6], [0.78, 1.6], [-0.78, 1.6], [0, 0.75], [0.3, 0.62], [-0.3, 0.62], [0.75, 0.82], [-0.75, 0.82], [0.8, 0.45], [-0.8, 0.45]]
   .map((p) => ({ p, text: classOrder(p) }));
 const F3_LABELS = LABELS.filter(({ p: [x, y] }) => x * x + y * y > 1);
@@ -51,7 +55,8 @@ export class TauPad {
   }
 
   /** The window on all of F_6 (or F_3). */
-  showAll() { this.view = F6_VIEW.slice(); }
+  showAll() { this.view = this._all().slice(); }
+  _all() { return this.mode === 'F1' ? F1_VIEW : F6_VIEW; }
 
   /** A window of half-width R centred on tau (by default a local one, scaled with Im tau). */
   centre(tau, R = 0.2 * tau[1]) {
@@ -142,8 +147,8 @@ export class TauPad {
     c.addEventListener('dblclick', (e) => {
       if (!this.tau) return;
       e.preventDefault();
-      const all = this.view.every((v, i) => Math.abs(v - F6_VIEW[i]) < 1e-9);
-      if (all) this.centre(this.tau); else this.view = F6_VIEW.slice();
+      const all = this.view.every((v, i) => Math.abs(v - this._all()[i]) < 1e-9);
+      if (all) this.centre(this.tau); else this.view = this._all().slice();
       this._fit(this.tau);
       this.draw();
     });
@@ -263,6 +268,14 @@ export class TauPad {
       for (const x of [-1, 1]) { ctx.moveTo(...P([x, 0])); ctx.lineTo(P([x, 0])[0], yHi); }
       ctx.moveTo(...P([-1, 0])); arc(0, 1, PI, 2 * PI);
       ctx.stroke();
+    } else if (this.mode === 'F1') {
+      // the boundary of F_1
+      ctx.strokeStyle = C.ink;
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      for (const x of [-0.5, 0.5]) { ctx.moveTo(...P([x, r3])); ctx.lineTo(P([x, 0])[0], yHi); }
+      ctx.moveTo(...P([-0.5, r3])); arc(0, 1, (4 * PI) / 3, (5 * PI) / 3);
+      ctx.stroke();
     } else {
       // the six copies of F_1 in F_6
       ctx.strokeStyle = C.rule;
@@ -305,7 +318,7 @@ export class TauPad {
     ctx.beginPath(); ctx.moveTo(x0, yAxis); ctx.lineTo(x0 + s, yAxis); ctx.stroke();
 
     // region labels, where the regions are big enough on screen
-    if (k > 45) {
+    if (k > 45 && this.mode !== 'F1') {
       ctx.fillStyle = C.muted;
       ctx.font = `italic ${k > 110 ? 12 : 10.5}px ${FONT}`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';

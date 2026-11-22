@@ -246,7 +246,7 @@ export function genus1Edge(tau, { rStart = 0.9999, rMin = 1e-4, factor = 0.8, ma
               double = { name: o, lamNode: [mo[0] / lo2, mo[1] / lo2] };
             }
           }
-          events.push({ name: n, r: hi, t: R.t, W: Wint(hi, R.t), P: R.P, Q: R.Q, lamNode: [mid[0] / l, mid[1] / l], gap, others, double, refineEvals: ref.evals });
+          events.push({ name: n, r: hi, t: R.t, W: Wint(hi, R.t), P: R.P, Q: R.Q, lamNode: [mid[0] / l, mid[1] / l], gap, others, double, onto: fromOff, refineEvals: ref.evals });
         }
         else { end = { r: hi, why: `the ${n} pair jumped branches (gap ${gap.toFixed(3)})` }; jumped = true; }
       }
@@ -817,4 +817,120 @@ export function openEndShapes(choices, { shapeGrid = 36 } = {}) {
     ch.shape = roundnessS4(S.pos4, n, n);
   }
   return choices;
+}
+
+// ---------------------------------------------------------------- the candidate family of a conformal class
+
+// The candidate family of the proposal (antrag, Sections 1.6 and 2.2) is parametrized by a threefold
+// covering of the moduli space of elliptic curves: three candidates for each conformal class E = C/Gamma^.
+// In K-PH-S (Knopf, Peña Hoepner, Schmidt 2025) these are the genus 1 curves with one sigma-node over S^1
+// (their M^2_2): the map a -> tau~_a to the lattice Gamma~ of the potential (our internal lattice) is a
+// threefold covering (Remark 4.2), the Sym points are the branch points and the node (Lemma 5.1), and the
+// torus closes on the index 2 sublattice Gamma^ of Gamma~ on which their characters agree (Lemma 5.3, our
+// F8). Conversely, Gamma^ has three index 2 superlattices Gamma^ + h, one for each half-period h of E, and
+// over each of them we find one such curve that closes on Gamma^ (numerically). The family of the
+// proposal (O-S-2) replaces some of these by curves of genus 2 with less W, or by the branched double
+// cover of the round sphere (W = 8 pi) where all of them have W > 8 pi.
+
+/**
+ * The three index 2 superlattices Gamma^ + h of the lattice Gamma^ = <1, tauExt> of a conformal class, for the
+ * half-periods h = 1/2, tauExt/2, (1 + tauExt)/2 of E = C/Gamma^, as internal tau (reduced to F_1).
+ * Returns [{ half, tau }].
+ */
+export function superlattices([x, y]) {
+  return [
+    { half: '½', tau: reduceTau([2 * x, 2 * y]) },
+    { half: 'τ/2', tau: reduceTau([x / 2, y / 2]) },
+    { half: '(1 + τ)/2', tau: reduceTau([(1 + x) / 2, y / 2]) },
+  ];
+}
+
+/**
+ * Whether two tau of the upper half plane are the same conformal class: their reductions to F_1 agree
+ * (on the boundary of F_1 up to the identification x <-> -x).
+ */
+export function sameClass(a, b, tol = 1e-5) {
+  const [p, q] = [reduceTau(a), reduceTau(b)];
+  const d = (u) => Math.hypot(u[0] - q[0], u[1] - q[1]);
+  const edge = Math.abs(Math.abs(p[0]) - 0.5) < 1e-6 || Math.hypot(...p) < 1 + 1e-6;
+  return Math.min(d(p), edge ? d([-p[0], p[1]]) : Infinity) < tol * Math.max(1, p[1]);
+}
+
+/**
+ * The genus 1 curves with one sigma-node over S^1 whose internal lattice is that of tau (the preimages of
+ * tau under the threefold covering of K-PH-S, Remark 4.2): each class in turn is opened first (in genus 0
+ * the shorter pairs are then already over S^1) and its genus 1 edge is followed to rMin; every passage of a
+ * marked pair through a sigma-node (arriving at S^1 or leaving it) is such a curve, with the branch point
+ * alpha and the node as Sym points. The first class opened is the one of internalFrame, so its first event
+ * is candidate 1 and its second candidate 1' of the tree.
+ * Returns { curves: [{ genus: 1, open, node, onto, k, onTree, alphas, syms, r, t, ...candidate }],
+ *   ends: [{ open, events, end }] } (open, node: class labels 1, 2, 3 as in classReps).
+ */
+export function nodalCurves(tau, { rMin = 1e-4, maxEvents = 4 } = {}) {
+  const reps = classReps(tau), order = [0, 1, 2].sort((a, b) => reps[a].len - reps[b].len);
+  const curves = [], ends = [];
+  for (const c of order) {
+    const rest = order.filter((x) => x !== c);
+    let tp = cdivc(reps[rest[0]].v, reps[c].v);
+    if (tp[1] < 0) tp = [-tp[0], -tp[1]];
+    const names = { tau: rest[0] + 1, third: rest[1] + 1 };
+    let edge;
+    try { edge = genus1Edge(tp, { maxEvents, rMin }); } catch (e) { ends.push({ open: c + 1, events: 0, end: { why: String(e.message || e) } }); continue; }
+    edge.events.forEach((ev, k) => {
+      const al = [[-ev.r, 0]], syms = [{ lam: al[0], nu: [0, 0] }, symPoint(al, ev.lamNode)];
+      const first = c === order[0];
+      const onTree = first && k === 0 ? { label: 'candidate 1', view: 0 } : first && k === 1 && !edge.events[0].double ? { label: 'candidate 1′', view: 0 } : null;
+      curves.push({ genus: 1, open: c + 1, node: names[ev.name], onto: ev.onto !== false, k, double: !!ev.double, onTree, alphas: al, syms, r: ev.r, t: ev.t,
+        ...candidate(al, torusBasis(ev.t, tp), syms) });
+    });
+    ends.push({ open: c + 1, events: edge.events.length, end: edge.end });
+  }
+  return { curves, ends };
+}
+
+const EIGHT_PI = 8 * Math.PI;
+const G2_NAMES = { 'a1,a2': 'candidate 2 (α₁ + α₂)', 'a1,node': 'candidate 3 (α₁ + the node)', 'a2,node': 'α₂ + the node' };
+const DOUBLE_NAMES = { 'a1,a2': 'candidate 1 (α + node a)', 'a1,node': 'candidate 3 (α + node b)', 'a2,node': 'node a + node b' };
+
+/**
+ * The candidate family of the conformal class tauExt: for each superlattice Gamma^ + h (internal tau), the
+ * constrained Willmore curves found over it that close on Gamma^ = <1, tauExt>:
+ *   genus 1: the nodal curves of nodalCurves (the family of K-PH-S),
+ *   genus 2: the choices of Sym points at the arrival on the genus 2 edge of the tree (candidate2), and at a
+ *   double arrival the choices on the genus 1 curve (one of them is a nodal curve already).
+ * The member is the one with the least W, if that is at most 8 pi; if all have W > 8 pi it is the branched
+ * double cover of the round sphere (W = 8 pi, the limit at the open ends, F12); if none was found, null.
+ * Returns { tauExt, members: [{ half, tau, found: [...] (sorted by W), member, doubleCover, ends, open }] }
+ * with each found curve { genus, how, W, alphas, syms: [{ lam, sign }], lattice, tauExt, onTree }.
+ */
+export function familyOf(tauExt, opts = {}) {
+  const te = reduceTau(tauExt);
+  const members = superlattices(te).map(({ half, tau }) => {
+    const found = [];
+    const N = nodalCurves(tau, opts);
+    for (const cv of N.curves) {
+      if (!sameClass(cv.tauExt, te)) continue;
+      // at a tie of two classes (|tau| = 1) opening either finds the same curve
+      if (found.some((f) => Math.abs(f.W - cv.W) < 1e-6 * cv.W)) continue;
+      const tag = cv.onTree ? ` (${cv.onTree.label} of the tree)` : '';
+      found.push({ genus: 1, how: `genus 1: class ${cv.open} opened, the pair of class ${cv.node} ${cv.onto ? 'arrives at' : 'leaves'} S¹${tag}`,
+        W: cv.W, alphas: cv.alphas, syms: cv.syms.map((p) => symOf(cv.alphas, p)), lattice: cv.lattice, tauExt: cv.tauExt, onTree: cv.onTree, r: cv.r });
+    }
+    let C2 = null;
+    try { C2 = candidate2(tau, { fast: true }); } catch { /* no tree */ }
+    if (C2 && C2.choices && !C2.openEnd) {
+      C2.choices.forEach((ch, v) => {
+        if (!sameClass(ch.tauExt, te)) return;
+        const key = ch.pair.join(), g = C2.double ? 1 : 2;
+        if (found.some((f) => f.genus === g && Math.abs(f.W - ch.W) < 1e-6 * ch.W)) return; // the same curve
+        found.push({ genus: g, how: C2.double ? `genus 1, double arrival: ${DOUBLE_NAMES[key]}` : `genus 2: ${G2_NAMES[key]}`,
+          W: ch.W, alphas: C2.alphas, syms: ch.syms.map((p) => symOf(C2.alphas, p)), lattice: ch.lattice, tauExt: ch.tauExt,
+          onTree: { label: C2.double ? 'candidates 1, 2, 3' : 'candidates 2, 3', view: v } });
+      });
+    }
+    found.sort((a, b) => a.W - b.W);
+    const best = found.length && found[0].W <= EIGHT_PI ? found[0] : null;
+    return { half, tau, found, member: best, doubleCover: !!found.length && !best, ends: N.ends, open: !!(C2 && C2.openEnd) };
+  });
+  return { tauExt: te, members };
 }
